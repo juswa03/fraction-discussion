@@ -507,13 +507,20 @@
     });
   }
 
+  // Tints the Android status bar of the installed app to match the theme.
+  function syncThemeColor(isDark) {
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", isDark ? "#0d0b26" : "#eef0ff");
+  }
+
   function setupThemeControl() {
     const toggleBtn = document.getElementById("theme-toggle");
     const currentTheme = localStorage.getItem("fraction_flow_theme") || "light";
-    
+
     if (currentTheme === "dark") {
       document.documentElement.setAttribute("data-theme", "dark");
       toggleBtn.textContent = "☀️";
+      syncThemeColor(true);
     }
 
     toggleBtn.addEventListener("click", () => {
@@ -527,6 +534,7 @@
         localStorage.setItem("fraction_flow_theme", "dark");
         toggleBtn.textContent = "☀️";
       }
+      syncThemeColor(!isDark);
     });
   }
 

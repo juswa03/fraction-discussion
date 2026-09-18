@@ -8,7 +8,10 @@
       content="Learn fraction subtraction with 3D lessons, tilt-card badges, and multilingual quizzes."
     />
     <title>Fraction Fusion: Subtraction Edition</title>
-    <link rel="icon" href="data:image/svg+xml,<svg xmlns=%22http://www.w3.org/2000/svg%22 viewBox=%220 0 100 100%22><text y=%22.9em%22 font-size=%2290%22>🛹</text></svg>" />
+    <link rel="icon" href="assets/icons/icon-192.png" />
+    <link rel="apple-touch-icon" href="assets/icons/icon-192.png" />
+    <link rel="manifest" href="manifest.json" />
+    <meta name="theme-color" content="#eef0ff" />
 
     <link rel="preload" as="font" type="font/woff2" crossorigin href="assets/fonts/poppins-latin-400.woff2" />
     <link rel="stylesheet" href="css/fonts.css" />
@@ -220,6 +223,17 @@
     <script src="js/quiz.js"></script>
     <script src="js/animations.js"></script>
     <script src="js/app.js"></script>
+
+    <script>
+      // Needs a secure context: https, or http://localhost (see README).
+      if ("serviceWorker" in navigator) {
+        window.addEventListener("load", () => {
+          navigator.serviceWorker.register("sw.js").catch((err) => {
+            console.warn("Offline mode unavailable:", err.message);
+          });
+        });
+      }
+    </script>
 
         <script>
       const bgMusic = document.getElementById("bgMusic");
