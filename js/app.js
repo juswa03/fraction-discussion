@@ -181,8 +181,8 @@
           videoElement = `<iframe class="lesson-video" src="${embedUrl}?rel=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width: 100%; aspect-ratio: 16/9; border-radius: var(--radius-sm); margin: 1rem 0;"></iframe>`;
         } else {
           videoElement = `
-              <video class="lesson-video" controls preload="metadata" aria-label="Lesson video for ${lesson.title}">
-                <source src="${video}" type="video/mp4" />
+              <video class="lesson-video" controls preload="metadata" poster="assets/videos/posters/${lessonId}.jpg" aria-label="Lesson video for ${lesson.title}">
+                <source class="lesson-video-source" data-lesson="${lessonId}" src="${video}" type="video/mp4" />
                 Your browser does not support video playback.
               </video>`;
         }
@@ -239,6 +239,25 @@
       video.addEventListener("ended", () => {
         const overlay = video.parentElement.querySelector(".video-overlay");
         if (overlay) overlay.style.display = "flex";
+      });
+    });
+
+    // <source> fires error (and does not bubble) when the file is missing.
+    document.querySelectorAll("source.lesson-video-source").forEach((source) => {
+      source.addEventListener("error", () => {
+        const container = source.closest(".video-container");
+        if (!container) return;
+        const lessonId = source.dataset.lesson;
+        container.innerHTML = `
+          <div class="video-missing">
+            <span class="video-missing-icon" aria-hidden="true">🎬</span>
+            <p class="video-missing-title">${langPack.quizText.videoSoonTitle}</p>
+            <p class="video-missing-body">${langPack.quizText.videoSoonBody}</p>
+            <button class="btn btn-primary" data-lesson="${lessonId}" type="button">${langPack.quizText.takeQuiz}</button>
+          </div>`;
+        container.querySelector("button").addEventListener("click", () => {
+          handleQuizStart(lessonId, currentLang);
+        });
       });
     });
   }

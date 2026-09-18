@@ -706,6 +706,35 @@ select:hover { transform: translateY(-2px); }
   display: block;
 }
 
+.lesson-video {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border-radius: var(--radius-sm);
+  margin: 1rem 0;
+  border: 2.5px solid var(--ink);
+  background: #000;
+  display: block;
+}
+
+.video-missing {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 0.5rem;
+  text-align: center;
+  aspect-ratio: 16 / 9;
+  justify-content: center;
+  padding: 1rem;
+  margin: 1rem 0;
+  border: 2.5px dashed var(--ink);
+  border-radius: var(--radius-sm);
+  background: var(--bg-2);
+}
+
+.video-missing-icon { font-size: 2.5rem; line-height: 1; }
+.video-missing-title { font-family: var(--font-display); font-weight: 700; margin: 0; }
+.video-missing-body { color: var(--text-muted); margin: 0; font-size: 0.9rem; }
+
 .objectives { padding-left: 1.1rem; color: var(--text-muted); }
 
 .card-actions { display: flex; gap: 0.6rem; margin-top: 0.9rem; flex-wrap: wrap; }

@@ -20,6 +20,8 @@
       },
       quizText: {
         takeQuiz: "Take Quiz",
+        videoSoonTitle: "Lesson video coming soon",
+        videoSoonBody: "This video has not been added yet. You can still take the quiz.",
         highestScore: "Highest Score",
         bestPercentage: "Best Percentage",
         attempts: "Attempts",
@@ -126,6 +128,8 @@
       },
       quizText: {
         takeQuiz: "Kumuha ng Quiz",
+        videoSoonTitle: "Malapit nang mailagay ang video",
+        videoSoonBody: "Wala pa ang video na ito. Maaari ka pa ring kumuha ng quiz.",
         highestScore: "Pinakamataas na Iskor",
         bestPercentage: "Pinakamagandang Porsyento",
         attempts: "Bilang ng Pagsubok",
@@ -232,6 +236,8 @@
       },
       quizText: {
         takeQuiz: "Pag-Quiz",
+        videoSoonTitle: "Hapit na ang video sa leksyon",
+        videoSoonBody: "Wala pa ni nga video. Makahimo ka gihapon ug quiz.",
         highestScore: "Pinakataas nga Iskor",
         bestPercentage: "Pinakamaayo nga Porsyento",
         attempts: "Kadaghanon sa Pagsulay",
@@ -320,26 +326,28 @@
     },
   };
 
+  // Local files so the app works offline. See assets/videos/README.md for the
+  // expected filenames; a missing file falls back to a "coming soon" card.
   const LESSON_VIDEO_MAP = {
     lesson1: {
-      en: "https://www.youtube.com/embed/lEHH2KzmkYU?si=4To4fG7gGa6AjXVM",
-      tl: "https://www.youtube.com/embed/hmFXjk7KVVc?si=3ChF9e7uPpGGAT8e",
-      bi: "https://www.youtube.com/embed/8ewqao3u2vs?si=vp-8rfltX29ITxDD",
+      en: "assets/videos/lesson1-en.mp4",
+      tl: "assets/videos/lesson1-tl.mp4",
+      bi: "assets/videos/lesson1-bi.mp4",
     },
     lesson2: {
-      en: "https://www.youtube.com/embed/Aw2oaGEwLFE?si=AKgBOj_soYZRd8Ek",
-      tl: "https://www.youtube.com/embed/EnR69VxA19I?si=O93i9X2TDMavqqCd",
-      bi: "https://www.youtube.com/embed/JAL-ScLDhgU?si=IPTBDZvGqFIJBVrR",
+      en: "assets/videos/lesson2-en.mp4",
+      tl: "assets/videos/lesson2-tl.mp4",
+      bi: "assets/videos/lesson2-bi.mp4",
     },
     lesson3: {
-      en: "https://www.youtube.com/embed/t0gg9woQCIg?si=GGhadbY58DKGpk7x",
-      tl: "https://www.youtube.com/embed/Hkx6cYSzw-w?si=wiBW5NFzB4klrE8c",
-      bi: "https://www.youtube.com/embed/0zCC0tWgwvw?si=q2jEy0bONZfxGK5Q",
+      en: "assets/videos/lesson3-en.mp4",
+      tl: "assets/videos/lesson3-tl.mp4",
+      bi: "assets/videos/lesson3-bi.mp4",
     },
     lesson4: {
-      en: "https://www.youtube.com/embed/ATVIWCf2RD0?si=UFUGA-xaEEoLnGpa",
-      tl: "https://www.youtube.com/embed/fqT3tE2AgCw?si=xv_5lTTIkIEQKstH",
-      bi: "https://www.youtube.com/embed/hVsIt__99pg?si=o3f0W3LPLMoik_xQ",
+      en: "assets/videos/lesson4-en.mp4",
+      tl: "assets/videos/lesson4-tl.mp4",
+      bi: "assets/videos/lesson4-bi.mp4",
     },
   };
 
