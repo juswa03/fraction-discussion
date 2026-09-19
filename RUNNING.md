@@ -177,8 +177,13 @@ To change the pass mark, edit `PASS_PERCENT` in both `js/quiz.js` and
 
 **Each question has a 3-minute timer.** The countdown sits beside the question
 counter and turns red for the last 30 seconds. If it runs out, the question is
-marked as "No answer", the correct choice is shown briefly, and the quiz moves
-on by itself.
+marked as "No answer" and the quiz moves on by itself.
+
+**Correct answers are not revealed during the quiz.** Answering shows only
+whether *your own* choice was right or wrong. Because quizzes can be retaken
+and the questions reshuffle each time, showing the right answer mid-quiz would
+let a student learn the key by guessing. Every correct answer is listed in the
+solutions review once the attempt is scored.
 
 The clock pauses if a student opens the quit dialog, and restarts fresh for
 each question, including when going back with the Back button.
@@ -212,7 +217,7 @@ is worth adding once the real videos exist and their total size is known.
 **Bump `VERSION` at the top of `sw.js`.**
 
 ```js
-const VERSION = "v5";   // -> "v6"
+const VERSION = "v6";   // -> "v7"
 ```
 
 Because the app stores copies of its own files for offline use, browsers keep

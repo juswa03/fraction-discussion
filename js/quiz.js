@@ -302,17 +302,16 @@
         (picked.id === question.correctChoiceId ||
           (canonical ? equivalent(picked.text, canonical.text) : false));
 
+      // Only the student's own answer is marked. The correct choice is NOT
+      // revealed here: quizzes can be retaken and the questions reshuffle,
+      // so flashing the answer would let a student learn the key by
+      // guessing. They see every correct answer in the solutions review
+      // once the attempt is scored.
       if (isCorrect) {
         state.score++;
         choices[state.selected].classList.add("is-correct");
-      } else {
-        if (!timedOut) choices[state.selected].classList.add("is-wrong");
-        for (var i = 0; i < question.choices.length; i++) {
-          if (question.choices[i].id === question.correctChoiceId) {
-            choices[i].classList.add("is-correct");
-            break;
-          }
-        }
+      } else if (!timedOut) {
+        choices[state.selected].classList.add("is-wrong");
       }
 
       if (timedOut) {
@@ -342,8 +341,9 @@
             renderQuestion();
           }
         },
-        // A moment longer on a timeout so the correct answer can be read.
-        timedOut ? 1400 : 850
+        // A moment longer on a timeout so "Time up!" registers before the
+        // next question replaces it.
+        timedOut ? 1200 : 850
       );
     }
 
