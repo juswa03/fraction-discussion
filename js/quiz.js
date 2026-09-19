@@ -1,439 +1,673 @@
+/* ==========================================================================
+   Quiz engine.
+
+   The grading rules are unchanged from the original: questions and choices
+   are shuffled per attempt, an answer counts as correct when it matches the
+   recorded id OR is mathematically equivalent to the correct choice, and the
+   pass mark is 70%. Only presentation and state handling changed.
+   ========================================================================== */
 (function () {
-  const state = {
+  "use strict";
+
+  var PASS_PERCENT = 70;
+  var SECONDS_PER_QUESTION = 180;
+  var WARN_AT_SECONDS = 30;
+  var esc = window.UI.escapeHtml;
+
+  var state = {
     lessonId: null,
     lang: "en",
     quiz: null,
-    currentIndex: 0,
+    index: 0,
     score: 0,
     selected: null,
-    userAnswers: [],
-    isFinished: false,
-    showHint: false,
+    answers: [],
+    finished: false,
+    locked: false
   };
 
-  const modal = document.getElementById("quiz-modal");
-  const modalBody = document.getElementById("quiz-modal-body");
+  /* ------------------------------------------------------------------------
+     Per-question countdown. One interval lives at a time; every path that
+     leaves a question (answering, going back, finishing, closing the modal)
+     must call stopTimer, or a stale interval keeps running against the next
+     question and expires it early.
+     ------------------------------------------------------------------------ */
+  var timer = { id: null, remaining: 0, onExpire: null };
 
-  function shuffle(array) {
-    const clone = [...array];
-    for (let i = clone.length - 1; i > 0; i -= 1) {
-      const j = Math.floor(Math.random() * (i + 1));
-      [clone[i], clone[j]] = [clone[j], clone[i]];
+  function stopTimer() {
+    if (timer.id !== null) {
+      window.clearInterval(timer.id);
+      timer.id = null;
+    }
+  }
+
+  function formatClock(seconds) {
+    var m = Math.floor(seconds / 60);
+    var s = seconds % 60;
+    return m + ":" + (s < 10 ? "0" : "") + s;
+  }
+
+  function paintClock() {
+    var el = body.querySelector("#quiz-timer");
+    if (!el) return;
+    el.textContent = formatClock(timer.remaining);
+    el.classList.toggle("is-warning", timer.remaining <= WARN_AT_SECONDS);
+    // Announce only at the warning threshold; a live region that speaks
+    // every second would make the quiz unusable with a screen reader.
+    el.setAttribute("aria-live", timer.remaining === WARN_AT_SECONDS ? "assertive" : "off");
+  }
+
+  function runTimer(seconds) {
+    stopTimer();
+    timer.remaining = seconds;
+    paintClock();
+    timer.id = window.setInterval(function () {
+      timer.remaining--;
+      paintClock();
+      if (timer.remaining <= 0) {
+        stopTimer();
+        if (timer.onExpire) timer.onExpire();
+      }
+    }, 1000);
+  }
+
+  function startTimer(onExpire) {
+    timer.onExpire = onExpire;
+    runTimer(SECONDS_PER_QUESTION);
+  }
+
+  function resumeTimer(seconds) {
+    runTimer(seconds);
+  }
+
+  var modal = document.getElementById("quiz-modal");
+  var body = document.getElementById("quiz-modal-body");
+
+  function t() {
+    return window.LanguageService.LANGUAGES[state.lang].quizText;
+  }
+
+  /* ---------------------------------------------------------------------- */
+  function shuffle(list) {
+    var clone = list.slice();
+    for (var i = clone.length - 1; i > 0; i--) {
+      var j = Math.floor(Math.random() * (i + 1));
+      var tmp = clone[i];
+      clone[i] = clone[j];
+      clone[j] = tmp;
     }
     return clone;
   }
 
   function gcd(a, b) {
-    let x = Math.abs(a);
-    let y = Math.abs(b);
+    var x = Math.abs(a);
+    var y = Math.abs(b);
     while (y !== 0) {
-      const t = y;
+      var t = y;
       y = x % y;
       x = t;
     }
     return x || 1;
   }
 
-  function parseChoiceTextToFraction(text) {
-    if (typeof text !== "string") {
-      return null;
-    }
+  /* Parses "2 3/4", "3/4" or "5" into a normalised fraction so that two
+     answers written differently but equal in value are still both accepted. */
+  function parseFraction(text) {
+    if (typeof text !== "string") return null;
+    var trimmed = text.trim();
 
-    const trimmed = text.trim();
-
-    const mixed = trimmed.match(/^(\d+)\s+(\d+)\/(\d+)/);
+    var mixed = trimmed.match(/^(\d+)\s+(\d+)\/(\d+)/);
     if (mixed) {
-      const whole = Number(mixed[1]);
-      const num = Number(mixed[2]);
-      const den = Number(mixed[3]);
-      if (!Number.isFinite(whole) || !Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
-        return null;
-      }
-      const numerator = whole * den + num;
-      const divisor = gcd(numerator, den);
+      var whole = Number(mixed[1]);
+      var num = Number(mixed[2]);
+      var den = Number(mixed[3]);
+      if (!den) return null;
+      var numerator = whole * den + num;
+      var divisor = gcd(numerator, den);
       return { n: numerator / divisor, d: den / divisor };
     }
 
-    const fraction = trimmed.match(/^(\d+)\/(\d+)/);
-    if (fraction) {
-      const num = Number(fraction[1]);
-      const den = Number(fraction[2]);
-      if (!Number.isFinite(num) || !Number.isFinite(den) || den === 0) {
-        return null;
-      }
-      const divisor = gcd(num, den);
-      return { n: num / divisor, d: den / divisor };
+    var simple = trimmed.match(/^(\d+)\/(\d+)/);
+    if (simple) {
+      var sn = Number(simple[1]);
+      var sd = Number(simple[2]);
+      if (!sd) return null;
+      var g = gcd(sn, sd);
+      return { n: sn / g, d: sd / g };
     }
 
-    const whole = trimmed.match(/^(\d+)(?!\s*\/)/);
-    if (whole) {
-      const num = Number(whole[1]);
-      if (!Number.isFinite(num)) {
-        return null;
-      }
-      return { n: num, d: 1 };
-    }
+    var integer = trimmed.match(/^(\d+)(?!\s*\/)/);
+    if (integer) return { n: Number(integer[1]), d: 1 };
 
     return null;
   }
 
-  function areEquivalentChoices(leftText, rightText) {
-    const left = parseChoiceTextToFraction(leftText);
-    const right = parseChoiceTextToFraction(rightText);
-    if (!left || !right) {
-      return false;
-    }
+  function equivalent(a, b) {
+    var left = parseFraction(a);
+    var right = parseFraction(b);
+    if (!left || !right) return false;
     return left.n * right.d === right.n * left.d;
   }
 
-  function openModal() {
-    modal.classList.add("open");
-    modal.setAttribute("aria-hidden", "false");
-  }
-
-  function closeModal() {
-    modal.classList.remove("open");
-    modal.setAttribute("aria-hidden", "true");
-  }
-
-  function quizFilePath(lessonId, lang) {
-    return `quizzes/json/${lessonId}-${lang}.json`;
-  }
-
-  function normalizeQuiz(raw) {
-    const questions = shuffle(raw.questions).map((q) => {
-      const choices = shuffle(q.choices);
-      return { ...q, choices };
-    });
-    return { ...raw, questions };
+  /* Word problems read as prose and are set in the body face; pure
+     expressions are set as maths. */
+  function isProse(prompt) {
+    return /[a-z]{4,}/i.test(String(prompt).replace(/\d+\/\d+/g, ""));
   }
 
   function buildHint(question) {
     if (typeof question.hint === "string" && question.hint.trim()) {
       return question.hint.trim();
     }
-
-    const prompt = typeof question.prompt === "string" ? question.prompt : "";
-    const lowerPrompt = prompt.toLowerCase();
-
-    if (lowerPrompt.includes("how much") || lowerPrompt.includes("remains") || lowerPrompt.includes("equals")) {
-      return "Read the story carefully, identify the two amounts to subtract, and set up the subtraction before solving.";
-    }
-
-    if (/\d+\s+\d+\/\d+/.test(prompt) || /\d+\/\d+/.test(prompt)) {
-      if (lowerPrompt.includes(" - ")) {
-        return "Rewrite the numbers so the fractional parts can be subtracted, then subtract carefully and simplify.";
-      }
-    }
-
-    return "Break the problem into smaller steps: rewrite the numbers if needed, subtract carefully, and simplify at the end.";
+    return t().genericHint;
   }
 
+  /* ---------------------------------------------------------------------- */
   function renderQuestion() {
-    const language = window.LanguageService.LANGUAGES[state.lang];
-    const t = language.quizText;
-    const question = state.quiz.questions[state.currentIndex];
-    const isLast = state.currentIndex === state.quiz.questions.length - 1;
-    const remaining = state.quiz.questions.length - (state.currentIndex + 1);
-    const progress = Math.round(((state.currentIndex + 1) / state.quiz.questions.length) * 100);
-    const hintText = buildHint(question);
-    const hasHint = Boolean(hintText);
-    state.showHint = false;
+    var q = state.quiz.questions[state.index];
+    var total = state.quiz.questions.length;
+    var isLast = state.index === total - 1;
+    var strings = t();
+    var hint = buildHint(q);
 
-    modalBody.innerHTML = `
-      <div class="quiz-header">
-        <h3 id="quiz-modal-title">${state.quiz.title}</h3>
-        <p>${state.quiz.description}</p>
-      </div>
-      <div class="quiz-meta">
-        <p><strong>${t.question} ${state.currentIndex + 1} ${t.of} ${state.quiz.questions.length}</strong> (${remaining} ${t.remaining})</p>
-      </div>
-      <div class="bar-shell"><div class="bar-fill" style="width:${progress}%"></div></div>
-      <article class="quiz-question">
-        <h4>${question.prompt}</h4>
-        ${
-          hasHint
-            ? `
-              <div class="quiz-hint">
-                <button id="hint-toggle" class="hint-toggle" type="button" aria-expanded="false" aria-controls="hint-panel">
-                  ${t.showHint}
-                </button>
-                <div id="hint-panel" class="hint-panel" hidden>
-                  <p><strong>${t.hintLabel}:</strong> ${hintText}</p>
-                </div>
-              </div>
-            `
-            : ""
-        }
-        <div class="quiz-choices">
-          ${question.choices
-            .map(
-              (choice, index) => `
-              <button class="choice-btn" data-index="${index}" type="button" aria-label="Answer choice ${index + 1}">
-                ${choice.text}
-              </button>
-            `
-            )
-            .join("")}
-        </div>
-      </article>
-      <div class="quiz-footer" style="display: flex; justify-content: ${state.currentIndex === 0 ? 'flex-end' : 'space-between'};">
-        ${
-          state.currentIndex > 0
-            ? `<button id="prev-btn" class="btn btn-ghost" type="button">${t.prev}</button>`
-            : ""
-        }
-        <button id="next-btn" class="btn btn-primary" type="button" disabled>
-          ${isLast ? t.finish : t.next}
-        </button>
-      </div>
-    `;
+    var ticks = "";
+    for (var i = 0; i < total; i++) {
+      var cls = "q-tick";
+      if (i < state.index) cls += " is-done";
+      else if (i === state.index) cls += " is-current";
+      ticks += '<div class="' + cls + '"></div>';
+    }
 
-    const choices = modalBody.querySelectorAll(".choice-btn");
-    const nextBtn = modalBody.querySelector("#next-btn");
-    const prevBtn = modalBody.querySelector("#prev-btn");
-    const hintToggle = modalBody.querySelector("#hint-toggle");
-    const hintPanel = modalBody.querySelector("#hint-panel");
+    body.innerHTML =
+      '<div class="quiz-head">' +
+      '<h3 id="quiz-modal-title">' + esc(state.quiz.title) + "</h3>" +
+      "<p>" + esc(state.quiz.description) + "</p>" +
+      "</div>" +
+      '<div class="quiz-progress">' +
+      '<span class="q-counter">' +
+      esc(strings.question) + " " + (state.index + 1) + " / " + total +
+      "</span>" +
+      '<span class="q-remaining">' +
+      (total - state.index - 1) + " " + esc(strings.remaining) +
+      "</span>" +
+      '<span id="quiz-timer" class="q-timer" role="timer" aria-label="' +
+      esc(strings.timeLeft) + '">' + formatClock(SECONDS_PER_QUESTION) + "</span>" +
+      "</div>" +
+      '<div class="q-ticks" role="progressbar" aria-valuemin="1" aria-valuemax="' +
+      total + '" aria-valuenow="' + (state.index + 1) +
+      '" aria-label="' + esc(strings.question) + '">' + ticks + "</div>" +
+      '<p class="quiz-prompt' + (isProse(q.prompt) ? " is-prose" : "") + '">' +
+      esc(q.prompt) +
+      "</p>" +
+      '<div class="quiz-hint">' +
+      '<button id="hint-toggle" class="hint-toggle" type="button" aria-expanded="false" aria-controls="hint-panel">' +
+      esc(strings.showHint) +
+      "</button>" +
+      '<div id="hint-panel" class="hint-panel" hidden>' +
+      "<strong>" + esc(strings.hintLabel) + ":</strong> " + esc(hint) +
+      "</div>" +
+      "</div>" +
+      '<div class="quiz-choices" role="group" aria-label="' + esc(strings.answerChoices) + '">' +
+      q.choices
+        .map(function (choice, index) {
+          return (
+            '<button class="choice-btn" data-index="' + index + '" type="button">' +
+            '<span class="choice-key" aria-hidden="true">' + (index + 1) + "</span>" +
+            "<span>" + esc(choice.text) + "</span>" +
+            "</button>"
+          );
+        })
+        .join("") +
+      "</div>" +
+      '<div class="quiz-foot">' +
+      (state.index > 0
+        ? '<button id="prev-btn" class="btn btn-quiet" type="button">' +
+          esc(strings.prev) +
+          "</button>"
+        : '<span class="kbd-hint">' + esc(strings.keyboardHint) + "</span>") +
+      '<button id="next-btn" class="btn btn-primary" type="button" disabled>' +
+      esc(isLast ? strings.finish : strings.next) +
+      "</button>" +
+      "</div>";
+
+    bindQuestion(q, isLast);
+  }
+
+  function bindQuestion(question, isLast) {
+    var choices = body.querySelectorAll(".choice-btn");
+    var nextBtn = body.querySelector("#next-btn");
+    var prevBtn = body.querySelector("#prev-btn");
+    var hintToggle = body.querySelector("#hint-toggle");
+    var hintPanel = body.querySelector("#hint-panel");
+
+    state.locked = false;
 
     if (hintToggle && hintPanel) {
-      hintToggle.addEventListener("click", () => {
-        state.showHint = !state.showHint;
-        hintPanel.hidden = !state.showHint;
-        hintToggle.textContent = state.showHint ? t.hideHint : t.showHint;
-        hintToggle.setAttribute("aria-expanded", String(state.showHint));
+      hintToggle.addEventListener("click", function () {
+        var show = hintPanel.hidden;
+        hintPanel.hidden = !show;
+        hintToggle.textContent = show ? t().hideHint : t().showHint;
+        hintToggle.setAttribute("aria-expanded", String(show));
       });
     }
 
-    choices.forEach((choiceBtn) => {
-      choiceBtn.addEventListener("click", () => {
-        choices.forEach((c) => c.classList.remove("selected"));
-        choiceBtn.classList.add("selected");
-        state.selected = Number(choiceBtn.dataset.index);
+    Array.prototype.forEach.call(choices, function (btn) {
+      btn.addEventListener("click", function () {
+        if (state.locked) return;
+        Array.prototype.forEach.call(choices, function (other) {
+          other.classList.remove("is-selected");
+        });
+        btn.classList.add("is-selected");
+        state.selected = Number(btn.dataset.index);
         nextBtn.disabled = false;
       });
     });
 
     if (prevBtn) {
-      prevBtn.addEventListener("click", () => {
-        if (state.currentIndex > 0) {
-          state.currentIndex -= 1;
-          const lastAnswer = state.userAnswers.pop();
-          if (lastAnswer && lastAnswer.correct) {
-            state.score -= 1;
-          }
-          state.selected = null;
-          renderQuestion();
-        }
+      prevBtn.addEventListener("click", function () {
+        if (state.locked || state.index === 0) return;
+        stopTimer();
+        state.index--;
+        // The answer being returned to is withdrawn so it cannot be counted
+        // twice when it is answered again.
+        var previous = state.answers.pop();
+        if (previous && previous.correct) state.score--;
+        state.selected = null;
+        renderQuestion();
       });
     }
 
-    nextBtn.addEventListener("click", () => {
-      if (state.selected === null) {
-        return;
-      }
+    // Shared by the Next button and by the timer running out, so a timeout
+    // scores and advances through exactly the same path as a real answer.
+    // timedOut === true means no choice was made: recorded as incorrect.
+    function commit(timedOut) {
+      if (state.locked) return;
+      if (!timedOut && state.selected === null) return;
+      state.locked = true;
+      stopTimer();
 
       nextBtn.disabled = true;
       if (prevBtn) prevBtn.disabled = true;
-      choices.forEach((c) => (c.disabled = true));
+      Array.prototype.forEach.call(choices, function (btn) {
+        btn.disabled = true;
+      });
 
-      const selectedChoice = question.choices[state.selected];
-      const canonicalCorrectChoice = question.choices.find((choice) => choice.id === question.correctChoiceId);
-      const isEquivalentCorrect = canonicalCorrectChoice
-        ? areEquivalentChoices(selectedChoice.text, canonicalCorrectChoice.text)
-        : false;
-      const isCorrect = selectedChoice.id === question.correctChoiceId || isEquivalentCorrect;
+      var canonical = question.choices.filter(function (choice) {
+        return choice.id === question.correctChoiceId;
+      })[0];
+      var picked = timedOut ? null : question.choices[state.selected];
+
+      var isCorrect =
+        !timedOut &&
+        (picked.id === question.correctChoiceId ||
+          (canonical ? equivalent(picked.text, canonical.text) : false));
+
       if (isCorrect) {
-        state.score += 1;
-        choices[state.selected].classList.add("correct");
+        state.score++;
+        choices[state.selected].classList.add("is-correct");
       } else {
-        choices[state.selected].classList.add("incorrect");
-        const correctIndex = question.choices.findIndex((c) => c.id === question.correctChoiceId);
-        if (correctIndex !== -1) {
-          choices[correctIndex].classList.add("correct");
+        if (!timedOut) choices[state.selected].classList.add("is-wrong");
+        for (var i = 0; i < question.choices.length; i++) {
+          if (question.choices[i].id === question.correctChoiceId) {
+            choices[i].classList.add("is-correct");
+            break;
+          }
         }
       }
 
-      state.userAnswers.push({
+      if (timedOut) {
+        var note = body.querySelector("#quiz-timer");
+        if (note) {
+          note.textContent = t().timeUp;
+          note.classList.add("is-expired");
+        }
+      }
+
+      state.answers.push({
         questionId: question.id,
-        selectedChoiceId: selectedChoice.id,
+        selectedChoiceId: picked ? picked.id : null,
         correct: isCorrect,
+        timedOut: !!timedOut
       });
 
-      setTimeout(() => {
-        state.selected = null;
-        if (isLast) {
-          state.isFinished = true;
-          renderResult();
-        } else {
-          state.currentIndex += 1;
-          renderQuestion();
-        }
-      }, 900);
+      window.setTimeout(
+        function () {
+          state.selected = null;
+          state.locked = false;
+          if (isLast) {
+            state.finished = true;
+            renderResult();
+          } else {
+            state.index++;
+            renderQuestion();
+          }
+        },
+        // A moment longer on a timeout so the correct answer can be read.
+        timedOut ? 1400 : 850
+      );
+    }
+
+    nextBtn.addEventListener("click", function () {
+      commit(false);
+    });
+
+    startTimer(function () {
+      commit(true);
     });
   }
 
-  function findQuestionAnswer(question, answerRecord) {
-    const selected = question.choices.find((c) => c.id === answerRecord.selectedChoiceId);
-    const correct = question.choices.find((c) => c.id === question.correctChoiceId);
-    return {
-      selected: selected ? selected.text : "No answer",
-      correct: correct ? correct.text : "",
-    };
+  /* ---------------------------------------------------------------------- */
+  function renderResult() {
+    stopTimer();
+    var strings = t();
+    var total = state.quiz.questions.length;
+    var percent = Math.round((state.score / total) * 100);
+    var passed = percent >= PASS_PERCENT;
+    var feedback =
+      percent >= 90 ? strings.excellent : passed ? strings.good : strings.keep;
+
+    var previousBest = window.StorageService.getLessonStats(state.lessonId).highestScore;
+    var stats = window.StorageService.updateLessonStats(state.lessonId, state.score, total);
+
+    // Stars for this attempt, shown big and first. A child reads three gold
+    // stars instantly; "87%" needs a concept they have not been taught yet.
+    // The percentages are still here, below, for the teacher.
+    var earned =
+      percent >= 100 ? 3 : percent >= 85 ? 2 : percent >= PASS_PERCENT ? 1 : 0;
+    var starRow = "";
+    for (var si = 0; si < 3; si++) {
+      starRow +=
+        '<span class="star' + (si < earned ? " is-earned" : "") + '"></span>';
+    }
+
+    body.innerHTML =
+      '<section class="result">' +
+      '<div class="stars stars-xl result-stars" role="img" aria-label="' +
+      esc(earned + " " + (earned === 1 ? strings.starOne : strings.starMany)) +
+      '">' + starRow + "</div>" +
+      '<span class="result-verdict ' + (passed ? "is-pass" : "is-fail") + '">' +
+      esc(passed ? strings.pass : strings.fail) +
+      "</span>" +
+      '<p class="result-score num">' + state.score +
+      "<small>/" + total + "</small></p>" +
+      '<p class="result-feedback">' + esc(feedback) + "</p>" +
+      '<dl class="result-stats">' +
+      '<div class="result-stat"><dt>' + esc(strings.thisAttempt) +
+      "</dt><dd>" + percent + "%</dd></div>" +
+      '<div class="result-stat"><dt>' + esc(strings.bestPercentage) +
+      "</dt><dd>" + stats.bestPercent + "%</dd></div>" +
+      '<div class="result-stat"><dt>' + esc(strings.attempts) +
+      "</dt><dd>" + stats.attempts + "</dd></div>" +
+      "</dl>" +
+      '<div class="result-actions">' +
+      '<button id="view-solutions" class="btn btn-secondary" type="button">' +
+      esc(strings.viewSolutions) + "</button>" +
+      '<button id="try-again" class="btn btn-primary" type="button">' +
+      esc(strings.tryAgain) + "</button>" +
+      '<button id="close-result" class="btn btn-quiet" type="button">' +
+      esc(strings.backLessons) + "</button>" +
+      "</div>" +
+      "</section>";
+
+    // Celebrate only a genuine new personal best at a high score, so the
+    // effect keeps its meaning rather than firing on every pass.
+    if (state.score > previousBest && percent >= 85) {
+      window.Motion.confettiBurst();
+    }
+
+    if (window.AppService && typeof window.AppService.renderAll === "function") {
+      window.AppService.renderAll();
+    }
+
+    body.querySelector("#view-solutions").addEventListener("click", renderSolutions);
+    body.querySelector("#try-again").addEventListener("click", function () {
+      startQuiz(state.lessonId, state.lang, true);
+    });
+    body.querySelector("#close-result").addEventListener("click", function () {
+      window.UI.closeModal(modal);
+      var lessons = document.getElementById("lessons");
+      if (lessons) lessons.scrollIntoView({ behavior: "smooth" });
+    });
   }
 
+  /* ---------------------------------------------------------------------- */
   function renderSolutions() {
-    const language = window.LanguageService.LANGUAGES[state.lang];
-    const t = language.quizText;
+    stopTimer();
+    var strings = t();
 
-    const cards = state.quiz.questions
-      .map((question, index) => {
-        const answerRecord = state.userAnswers.find((item) => item.questionId === question.id);
-        const answers = findQuestionAnswer(question, answerRecord || { selectedChoiceId: "" });
+    var cards = state.quiz.questions
+      .map(function (question, index) {
+        var record = state.answers.filter(function (item) {
+          return item.questionId === question.id;
+        })[0];
 
-        return `
-          <article class="solution-card">
-            <p><strong>${t.question} ${index + 1}</strong> <span class="badge ${answerRecord && answerRecord.correct ? "ok" : "no"}">${
-              answerRecord && answerRecord.correct ? t.correct : t.incorrect
-            }</span></p>
-            <p>${question.prompt}</p>
-            <p><strong>${t.yourAnswer}:</strong> ${answers.selected}</p>
-            <p><strong>${t.correctAnswer}:</strong> ${answers.correct}</p>
-            <p><strong>${t.steps}:</strong> ${question.explanation}</p>
-          </article>
-        `;
+        var picked = question.choices.filter(function (choice) {
+          return record && choice.id === record.selectedChoiceId;
+        })[0];
+
+        var correct = question.choices.filter(function (choice) {
+          return choice.id === question.correctChoiceId;
+        })[0];
+
+        var wasRight = record && record.correct;
+
+        return (
+          '<article class="solution ' + (wasRight ? "is-correct" : "is-wrong") + '">' +
+          '<div class="solution-head">' +
+          "<span>" + esc(strings.question) + " " + (index + 1) + "</span>" +
+          '<span class="badge ' + (wasRight ? "is-ok" : "is-no") + '">' +
+          esc(wasRight ? strings.correct : strings.incorrect) +
+          "</span>" +
+          "</div>" +
+          '<p class="solution-prompt">' + esc(question.prompt) + "</p>" +
+          '<dl class="solution-answers">' +
+          "<div><dt>" + esc(strings.yourAnswer) + "</dt><dd>" +
+          esc(picked ? picked.text : strings.noAnswer) + "</dd></div>" +
+          "<div><dt>" + esc(strings.correctAnswer) + "</dt><dd>" +
+          esc(correct ? correct.text : "") + "</dd></div>" +
+          "</dl>" +
+          '<div class="solution-steps"><strong>' + esc(strings.steps) + "</strong>" +
+          esc(question.explanation) + "</div>" +
+          "</article>"
+        );
       })
       .join("");
 
-    modalBody.innerHTML = `
-      <section>
-        <h3>${window.LanguageService.LANGUAGES[state.lang].quizText.viewSolutions}</h3>
-        <div class="solution-list">${cards}</div>
-      </section>
-    `;
+    body.innerHTML =
+      '<div class="quiz-head"><h3 id="quiz-modal-title">' +
+      esc(strings.viewSolutions) +
+      "</h3></div>" +
+      '<div class="solution-list">' + cards + "</div>" +
+      '<div class="result-actions">' +
+      '<button id="back-to-result" class="btn btn-secondary" type="button">' +
+      esc(strings.backToScore) +
+      "</button>" +
+      "</div>";
+
+    body.querySelector("#back-to-result").addEventListener("click", renderResult);
+    // A long review list would otherwise stay scrolled to where the result
+    // panel left off.
+    modal.querySelector(".modal-panel").scrollTop = 0;
   }
 
-  function renderResult() {
-    const language = window.LanguageService.LANGUAGES[state.lang];
-    const t = language.quizText;
-    const total = state.quiz.questions.length;
-    const percent = Math.round((state.score / total) * 100);
-    const passed = percent >= 70;
-    const feedback = percent >= 90 ? t.excellent : percent >= 70 ? t.good : t.keep;
+  /* ---------------------------------------------------------------------- */
+  function renderSkeleton() {
+    stopTimer();
+    body.innerHTML =
+      '<div class="quiz-head"><h3 id="quiz-modal-title">' +
+      esc(t().loadingQuiz) +
+      "</h3></div>" +
+      '<div class="skeleton skeleton-prompt"></div>' +
+      '<div class="skeleton skeleton-choice"></div>' +
+      '<div class="skeleton skeleton-choice"></div>' +
+      '<div class="skeleton skeleton-choice"></div>' +
+      '<div class="skeleton skeleton-choice"></div>';
+  }
 
-    const stats = window.StorageService.updateLessonStats(state.lessonId, state.score, total);
-    const isHighScore = stats.highestScore === state.score && stats.bestPercent === percent;
+  function renderError() {
+    stopTimer();
+    var strings = t();
+    var isFileProtocol = window.location.protocol === "file:";
 
-    if (isHighScore && percent >= 85) {
-      window.AnimationService.confettiBurst();
-    }
+    body.innerHTML =
+      '<div class="state-message is-error">' +
+      "<h4>" + esc(strings.errorTitle) + "</h4>" +
+      "<p>" +
+      esc(isFileProtocol ? strings.errorFileProtocol : strings.errorGeneric) +
+      "</p>" +
+      (isFileProtocol
+        ? "<p><code>python -m http.server 8000</code></p>"
+        : "") +
+      '<div class="result-actions">' +
+      '<button id="retry-quiz" class="btn btn-primary" type="button">' +
+      esc(strings.retry) +
+      "</button>" +
+      "</div>" +
+      "</div>";
 
-    modalBody.innerHTML = `
-      <section class="result-panel ${passed ? "celebrate" : ""}">
-        <h3>${feedback}</h3>
-        <p class="result-score">${state.score}/${total} (${percent}%)</p>
-        <p class="${passed ? "pass" : "fail"}" style="font-weight: 700; font-size: 1.1rem; margin-bottom: 0.5rem;">${passed ? t.pass : t.fail}</p>
-        <p style="color: var(--text-muted);">Highest score: ${stats.highestScore}/${total} | Best: ${stats.bestPercent}% | Attempts: ${stats.attempts}</p>
-
-        <div class="result-actions">
-          <button id="view-solutions" class="btn btn-ghost" type="button">${t.viewSolutions}</button>
-          <button id="try-again" class="btn btn-primary" type="button">${t.tryAgain}</button>
-          <button id="choose-another" class="btn btn-ghost" type="button">${t.anotherQuiz}</button>
-          <button id="back-lessons" class="btn btn-ghost" type="button">${t.backLessons}</button>
-        </div>
-      </section>
-    `;
-
-    const rerender = window.AppService && window.AppService.renderAll;
-    if (typeof rerender === "function") {
-      rerender();
-    }
-
-    modalBody.querySelector("#view-solutions").addEventListener("click", renderSolutions);
-    modalBody.querySelector("#try-again").addEventListener("click", () => startQuiz(state.lessonId, state.lang, true));
-    modalBody.querySelector("#choose-another").addEventListener("click", closeModal);
-    modalBody.querySelector("#back-lessons").addEventListener("click", () => {
-      closeModal();
-      document.getElementById("lessons").scrollIntoView({ behavior: "smooth" });
+    body.querySelector("#retry-quiz").addEventListener("click", function () {
+      startQuiz(state.lessonId, state.lang, true);
     });
   }
 
-  async function startQuiz(lessonId, lang, forceRestart = false) {
-    if (!forceRestart && state.quiz && state.lessonId === lessonId && state.lang === lang && !state.isFinished) {
-      openModal();
-      return; 
+  /* ---------------------------------------------------------------------- */
+  function startQuiz(lessonId, lang, forceRestart) {
+    // Returning to an attempt already in progress resumes it rather than
+    // discarding the student's answers.
+    if (
+      !forceRestart &&
+      state.quiz &&
+      state.lessonId === lessonId &&
+      state.lang === lang &&
+      !state.finished
+    ) {
+      window.UI.openModal(modal);
+      return;
     }
 
+    stopTimer();
     state.lessonId = lessonId;
     state.lang = lang;
-    state.currentIndex = 0;
+    state.index = 0;
     state.score = 0;
     state.selected = null;
-    state.userAnswers = [];
-    state.isFinished = false;
-    state.showHint = false;
+    state.answers = [];
+    state.finished = false;
+    state.locked = false;
+    state.quiz = null;
 
-    try {
-      const response = await fetch(quizFilePath(lessonId, lang));
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-      const rawQuiz = await response.json();
-      state.quiz = normalizeQuiz(rawQuiz);
-      openModal();
-      renderQuestion();
-    } catch (error) {
-      openModal();
-      console.error(error);
-      if (window.location.protocol === "file:") {
-        modalBody.innerHTML = `
-          <div style="text-align: center; padding: 2rem;">
-            <p style="color: var(--danger); font-weight: 700; margin-bottom: 1rem;">Unable to load quiz data.</p>
-            <p>Your browser blocked loading the quiz data because you are opening the file directly from your computer (<code>file://</code> protocol).</p>
-            <p style="margin-top: 1rem; font-weight: bold;">To fix this:</p>
-            <p>Please open this project using a local web server (like the <strong>Live Server</strong> extension in VS Code).</p>
-          </div>
-        `;
-      } else {
-        modalBody.innerHTML = "<p>Unable to load quiz data. Please check file paths and try again.</p>";
-      }
-    }
+    window.UI.openModal(modal);
+    renderSkeleton();
+
+    fetch("quizzes/json/" + lessonId + "-" + lang + ".json")
+      .then(function (response) {
+        if (!response.ok) throw new Error("HTTP " + response.status);
+        return response.json();
+      })
+      .then(function (raw) {
+        state.quiz = {
+          title: raw.title,
+          description: raw.description,
+          questions: shuffle(raw.questions).map(function (question) {
+            var copy = {};
+            for (var key in question) {
+              if (Object.prototype.hasOwnProperty.call(question, key)) {
+                copy[key] = question[key];
+              }
+            }
+            copy.choices = shuffle(question.choices);
+            return copy;
+          })
+        };
+        renderQuestion();
+      })
+      .catch(function (error) {
+        console.error("Quiz load failed:", error);
+        renderError();
+      });
   }
 
-  function handleCloseRequest() {
-    if (!state.isFinished && state.quiz && state.currentIndex >= 0 && state.selected === null && state.currentIndex !== state.quiz.questions.length) {
-       const confirmClose = window.confirm("Are you sure you want to pause taking this quiz? Your progress will be saved.");
-       if (!confirmClose) return;
+  /* ------------------------------------------------------------------------
+     Closing mid-attempt asks for confirmation through a real dialog rather
+     than window.confirm(), which could not be translated or styled.
+     ------------------------------------------------------------------------ */
+  function requestClose() {
+    var inProgress = state.quiz && !state.finished && state.answers.length > 0;
+    if (!inProgress) {
+      stopTimer();
+      window.UI.closeModal(modal);
+      return;
     }
-    closeModal();
+
+    // Hold the clock while the student decides whether to quit, so the
+    // question cannot expire behind the confirmation dialog.
+    var heldAt = timer.remaining;
+    stopTimer();
+
+    var confirmModal = document.getElementById("confirm-modal");
+    window.UI.openModal(confirmModal, { focus: "#confirm-cancel" });
+
+    var ok = document.getElementById("confirm-ok");
+    var cancel = document.getElementById("confirm-cancel");
+
+    function cleanup() {
+      ok.removeEventListener("click", onOk);
+      cancel.removeEventListener("click", onCancel);
+    }
+
+    function onOk() {
+      cleanup();
+      window.UI.closeModal(confirmModal);
+      window.UI.closeModal(modal);
+    }
+
+    function onCancel() {
+      cleanup();
+      window.UI.closeModal(confirmModal);
+      // Resume from where it was held rather than granting a fresh 3 minutes.
+      if (!state.finished && !state.locked && heldAt > 0) {
+        resumeTimer(heldAt);
+      }
+    }
+
+    ok.addEventListener("click", onOk);
+    cancel.addEventListener("click", onCancel);
   }
 
-  document.getElementById("close-quiz-modal").addEventListener("click", handleCloseRequest);
-  modal.addEventListener("click", (event) => {
-    if (event.target === modal) {
-      handleCloseRequest();
+  document
+    .getElementById("close-quiz-modal")
+    .addEventListener("click", requestClose);
+
+  window.UI.bindBackdrop(modal, requestClose);
+  window.UI.setEscapeHandler(modal, requestClose);
+
+  /* Keyboard: 1-4 select an answer, Enter advances. Now discoverable,
+     because the choice buttons show their number. */
+  document.addEventListener("keydown", function (event) {
+    if (!modal.classList.contains("is-open")) return;
+    if (document.getElementById("confirm-modal").classList.contains("is-open")) return;
+
+    var tag = document.activeElement && document.activeElement.tagName;
+    if (tag === "INPUT" || tag === "TEXTAREA") return;
+
+    if (event.key >= "1" && event.key <= "9") {
+      var choices = body.querySelectorAll(".choice-btn");
+      var target = choices[Number(event.key) - 1];
+      if (target && !target.disabled) {
+        event.preventDefault();
+        target.click();
+      }
+      return;
+    }
+
+    if (event.key === "Enter") {
+      var next = body.querySelector("#next-btn");
+      if (next && !next.disabled) {
+        event.preventDefault();
+        next.click();
+      }
     }
   });
 
-  document.addEventListener("keydown", (e) => {
-    if (!modal.classList.contains("open")) return;
-    
-    if (e.key >= "1" && e.key <= "4") {
-      const index = parseInt(e.key) - 1;
-      const choices = modalBody.querySelectorAll(".choice-btn");
-      if (choices[index] && !choices[index].disabled) {
-        choices[index].click();
-      }
-    } else if (e.key === "Enter") {
-      const nextBtn = modalBody.querySelector("#next-btn");
-      if (nextBtn && !nextBtn.disabled) {
-        nextBtn.click();
-      }
-    } else if (e.key === "Escape") {
-      handleCloseRequest();
-    }
-  });
-
-  window.QuizService = {
-    startQuiz,
-  };
+  window.QuizService = { startQuiz: startQuiz };
 })();

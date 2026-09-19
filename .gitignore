@@ -6,3 +6,6 @@ assets/videos/*.mp4
 
 # Local dev certs
 certs/
+
+# Android SDK platform-tools (downloaded separately, see RUNNING.md)
+platform-tools/

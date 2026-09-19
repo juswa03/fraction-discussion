@@ -1,572 +1,970 @@
+/* ==========================================================================
+   Application shell: rendering, navigation, theme, language, progress.
+   ========================================================================== */
 (function () {
-  const lessonOrder = ["lesson1", "lesson2", "lesson3", "lesson4"];
-  const PASS_PERCENT = 70;
-  let currentLang = "en";
+  "use strict";
 
-  const certificateModal = document.getElementById("certificate-modal");
-  const certificateBody = document.getElementById("certificate-body");
+  var LESSONS = ["lesson1", "lesson2", "lesson3", "lesson4"];
+  var PASS_PERCENT = 70;
+  var QUESTIONS_PER_QUIZ = 15;
+  var THEME_KEY = "fraction_flow_theme";
 
-  function encodePath(path) {
-    return encodeURI(path);
+  /* Which diagram from the shared artwork sheet illustrates each lesson.
+     All four show a real object cut into parts, which is the idea every one
+     of these lessons rests on. */
+  var FIGURES = ["fig-pizza", "fig-chocolate", "fig-jug", "fig-cupcake"];
+
+  /* Stars earned for a given best score. Percentages are still stored and
+     still shown on the scoreboard; stars are simply the version a 7-year-old
+     can read without having been taught what a percentage is. */
+  function starCount(percent) {
+    if (percent >= 100) return 3;
+    if (percent >= 85) return 2;
+    if (percent >= PASS_PERCENT) return 1;
+    return 0;
   }
 
-  function moveIndicator() {
-    const nav = document.querySelector(".nav-links");
-    const navInner = document.querySelector(".nav-inner");
-    const indicator = document.getElementById("active-indicator");
-    if (!nav || !navInner || !indicator) {
-      return;
+  function starsMarkup(percent, t) {
+    var earned = starCount(percent);
+    var stars = "";
+    for (var i = 0; i < 3; i++) {
+      stars +=
+        '<span class="star' + (i < earned ? " is-earned" : "") + '"></span>';
     }
-    const active = nav.querySelector(".nav-link.active");
-    if (!active || window.innerWidth <= 760) {
-      indicator.style.opacity = "0";
-      return;
-    }
-    const activeRect = active.getBoundingClientRect();
-    const navInnerRect = navInner.getBoundingClientRect();
-
-    indicator.style.opacity = "1";
-    indicator.style.width = `${activeRect.width}px`;
-    indicator.style.height = `${activeRect.height}px`;
-    indicator.style.left = `${activeRect.left - navInnerRect.left}px`;
-    indicator.style.top = `${activeRect.top - navInnerRect.top}px`;
-    indicator.style.transform = "none";
+    return (
+      '<span class="stars" role="img" aria-label="' +
+      esc(earned + " " + (earned === 1 ? t.starOne : t.starMany)) +
+      '">' +
+      stars +
+      "</span>"
+    );
   }
 
+  var esc = window.UI.escapeHtml;
+  var currentLang = "en";
+  var pendingQuiz = null;
+
+  /* One place decides how a quiz button reads, so the card, the video
+     overlay and the scoreboard can never disagree about the lock. */
+  function quizButtonMarkup(lessonId, classes, label) {
+    var t = pack().quizText;
+    var locked =
+      window.StorageService.lockedBy(LESSONS, lessonId, PASS_PERCENT) > 0;
+    return (
+      '<button class="btn ' + (locked ? "btn-secondary is-locked" : classes) +
+      ' js-start-quiz" data-lesson="' + esc(lessonId) + '" type="button">' +
+      (locked
+        ? '<span class="lock-glyph" aria-hidden="true">&#128274;</span> ' + esc(t.lockedChip)
+        : esc(label)) +
+      "</button>"
+    );
+  }
+
+  function pack() {
+    return window.LanguageService.LANGUAGES[currentLang];
+  }
+
+  /* ------------------------------------------------------------------------
+     Theme. Bound once, here. index.html applies the stored value before
+     first paint; this only handles the toggle afterwards.
+     ------------------------------------------------------------------------ */
+  function currentTheme() {
+    return document.documentElement.getAttribute("data-theme") === "dark"
+      ? "dark"
+      : "light";
+  }
+
+  function applyTheme(theme) {
+    var btn = document.getElementById("theme-toggle");
+    var isDark = theme === "dark";
+
+    if (isDark) {
+      document.documentElement.setAttribute("data-theme", "dark");
+    } else {
+      document.documentElement.removeAttribute("data-theme");
+    }
+
+    try {
+      localStorage.setItem(THEME_KEY, theme);
+    } catch (e) {
+      /* Private mode: the theme simply will not persist. */
+    }
+
+    if (btn) {
+      btn.setAttribute(
+        "aria-label",
+        isDark ? "Switch to light theme" : "Switch to dark theme"
+      );
+    }
+
+    // Tints the Android status bar of the installed PWA.
+    var meta = document.querySelector('meta[name="theme-color"]');
+    if (meta) meta.setAttribute("content", isDark ? "#15130f" : "#fbf9f4");
+  }
+
+  function setupTheme() {
+    var btn = document.getElementById("theme-toggle");
+    if (!btn) return;
+
+    applyTheme(currentTheme());
+
+    btn.addEventListener("click", function () {
+      applyTheme(currentTheme() === "dark" ? "light" : "dark");
+    });
+
+    // Follows the OS only while the student has never chosen for themselves.
+    var media = window.matchMedia("(prefers-color-scheme: dark)");
+    var onChange = function (event) {
+      var stored = null;
+      try {
+        stored = localStorage.getItem(THEME_KEY);
+      } catch (e) {
+        /* ignore */
+      }
+      if (!stored) applyTheme(event.matches ? "dark" : "light");
+    };
+
+    if (typeof media.addEventListener === "function") {
+      media.addEventListener("change", onChange);
+    } else if (typeof media.addListener === "function") {
+      media.addListener(onChange);
+    }
+  }
+
+  /* ------------------------------------------------------------------------
+     Navigation. One observer decides the current section; there is no
+     second implementation to disagree with it.
+     ------------------------------------------------------------------------ */
   function setupNav() {
-    const links = document.querySelectorAll(".nav-link");
-    const sections = [...links]
-      .map((link) => document.querySelector(link.getAttribute("href")))
+    var links = Array.prototype.slice.call(document.querySelectorAll(".nav-link"));
+    var toggle = document.getElementById("menu-toggle");
+    var menu = document.getElementById("nav-menu");
+    if (!links.length) return;
+
+    function setCurrent(id) {
+      links.forEach(function (link) {
+        if (link.dataset.nav === id) {
+          link.setAttribute("aria-current", "true");
+        } else {
+          link.removeAttribute("aria-current");
+        }
+      });
+    }
+
+    var sections = links
+      .map(function (link) {
+        return document.getElementById(link.dataset.nav);
+      })
       .filter(Boolean);
-    const backToTop = document.getElementById("back-to-top");
-    const menuToggle = document.getElementById("menu-toggle");
-    const navLinks = document.getElementById("nav-links");
 
-    if (!links.length || !menuToggle || !navLinks) {
-      return;
-    }
-
-    function setActive(id) {
-      links.forEach((link) => {
-        link.classList.toggle("active", link.getAttribute("href") === `#${id}`);
-      });
-      moveIndicator();
-    }
-
-    function updateBackToTop() {
-      if (!backToTop) {
-        return;
-      }
-      backToTop.classList.toggle("show", window.scrollY > 400);
-    }
-
-    function syncActiveFromScroll() {
-      if (!sections.length) {
-        return;
-      }
-
-      const anchorY = window.innerHeight * 0.38;
-      let activeId = sections[0].id;
-      let nearestDistance = Number.POSITIVE_INFINITY;
-
-      sections.forEach((section) => {
-        const rect = section.getBoundingClientRect();
-        const topDistance = Math.abs(rect.top - anchorY);
-
-        // Prefer sections whose visible region crosses the anchor line.
-        if (rect.top <= anchorY && rect.bottom >= anchorY) {
-          activeId = section.id;
-          nearestDistance = -1;
-          return;
-        }
-
-        if (nearestDistance !== -1 && topDistance < nearestDistance) {
-          nearestDistance = topDistance;
-          activeId = section.id;
-        }
-      });
-
-      setActive(activeId);
-    }
-
-    let ticking = false;
-    function onScroll() {
-      if (ticking) {
-        return;
-      }
-      ticking = true;
-      window.requestAnimationFrame(() => {
-        syncActiveFromScroll();
-        updateBackToTop();
-        ticking = false;
+    if ("IntersectionObserver" in window && sections.length) {
+      var observer = new IntersectionObserver(
+        function (entries) {
+          // The section closest to the top of the viewport wins, so two
+          // simultaneously-visible sections can never fight.
+          var best = null;
+          entries.forEach(function (entry) {
+            if (!entry.isIntersecting) return;
+            if (!best || entry.boundingClientRect.top < best.boundingClientRect.top) {
+              best = entry;
+            }
+          });
+          if (best) setCurrent(best.target.id);
+        },
+        { rootMargin: "-20% 0px -70% 0px", threshold: 0 }
+      );
+      sections.forEach(function (section) {
+        observer.observe(section);
       });
     }
 
-    window.addEventListener("scroll", onScroll, { passive: true });
+    setCurrent("top");
 
-    links.forEach((link) => {
-      link.addEventListener("click", () => {
-        window.AnimationService.sectionTransition("show");
-        setTimeout(() => window.AnimationService.sectionTransition("hide"), 280);
-        if (window.innerWidth <= 760) {
-          navLinks.classList.remove("open");
-          menuToggle.setAttribute("aria-expanded", "false");
-        }
+    function closeMenu() {
+      if (!menu) return;
+      menu.classList.remove("is-open");
+      if (toggle) toggle.setAttribute("aria-expanded", "false");
+    }
+
+    if (toggle && menu) {
+      toggle.addEventListener("click", function () {
+        var open = menu.classList.toggle("is-open");
+        toggle.setAttribute("aria-expanded", String(open));
       });
+    }
+
+    links.forEach(function (link) {
+      link.addEventListener("click", closeMenu);
     });
 
-    menuToggle.addEventListener("click", () => {
-      const open = navLinks.classList.toggle("open");
-      menuToggle.setAttribute("aria-expanded", String(open));
+    document.addEventListener("click", function (event) {
+      if (!menu || !menu.classList.contains("is-open")) return;
+      if (menu.contains(event.target) || (toggle && toggle.contains(event.target))) return;
+      closeMenu();
     });
 
-    window.addEventListener("resize", () => {
-      syncActiveFromScroll();
-      moveIndicator();
-    });
-    syncActiveFromScroll();
-    updateBackToTop();
-    moveIndicator();
-  }
-
-  function navText(lang) {
-    const labels = window.LanguageService.LANGUAGES[lang].nav;
-    document.querySelectorAll(".nav-link").forEach((link, index) => {
-      link.textContent = labels[index];
+    window.addEventListener("resize", function () {
+      if (window.innerWidth > 760) closeMenu();
     });
   }
 
-  function getTrophyIcon(percentage) {
-    if (percentage === 100) return "🥇";
-    if (percentage >= 85) return "🥈";
-    if (percentage >= 70) return "🥉";
-    return "";
+  /* ------------------------------------------------------------------------
+     Progress. This is the single writer of #progress-fill. It reflects quiz
+     completion, which is what the label claims.
+     ------------------------------------------------------------------------ */
+  function renderProgress() {
+    var t = pack().quizText;
+    var passed = 0;
+    var attempted = 0;
+
+    LESSONS.forEach(function (id) {
+      var stats = window.StorageService.getLessonStats(id);
+      if (stats.bestPercent >= PASS_PERCENT) passed++;
+      if (stats.attempts > 0) attempted++;
+    });
+
+    var percent = Math.round((passed / LESSONS.length) * 100);
+
+    var fill = document.getElementById("progress-fill");
+    if (fill) fill.style.width = percent + "%";
+
+    // Total stars is the headline figure: it counts up as they work, and
+    // unlike a percentage it never goes down or reads as a grade.
+    var totalStars = 0;
+    LESSONS.forEach(function (id) {
+      totalStars += starCount(window.StorageService.getLessonStats(id).bestPercent);
+    });
+
+    // A row of actual stars in the panel header, rather than a percentage.
+    // "0%" on a first visit reads as a mark out of 100 and is discouraging;
+    // three empty star outlines read as "these are yours to collect".
+    var label = document.getElementById("progress-percent");
+    if (label) {
+      label.classList.add("stars", "stars-lg");
+      label.setAttribute("role", "img");
+      label.setAttribute(
+        "aria-label",
+        totalStars + " " + (totalStars === 1 ? t.starOne : t.starMany)
+      );
+      var dots = "";
+      for (var i = 0; i < LESSONS.length; i++) {
+        dots +=
+          '<span class="star' +
+          (i < passed ? " is-earned" : "") +
+          '"></span>';
+      }
+      label.innerHTML = dots;
+    }
+
+    var stats = document.getElementById("progress-stats");
+    if (!stats) return;
+
+    stats.innerHTML =
+      '<div class="stat-row stat-row-stars">' +
+      '<dt class="stat-label">' + esc(t.starsEarned) + "</dt>" +
+      '<dd class="stat-value num">' + totalStars + " / " + LESSONS.length * 3 + "</dd>" +
+      "</div>" +
+      row(t.lessonsPassed, passed + " / " + LESSONS.length) +
+      row(t.quizzesAttempted, attempted + " / " + LESSONS.length);
+
+    function row(label, value) {
+      return (
+        '<div class="stat-row">' +
+        '<dt class="stat-label">' + esc(label) + "</dt>" +
+        '<dd class="stat-value num">' + esc(value) + "</dd>" +
+        "</div>"
+      );
+    }
+  }
+
+  /* ------------------------------------------------------------------------
+     Lessons
+     ------------------------------------------------------------------------ */
+  function videoMarkup(lessonId, lessonTitle) {
+    var raw = window.LanguageService.LESSON_VIDEO_MAP[lessonId][currentLang];
+    var isYouTube = raw.indexOf("youtube.com") !== -1 || raw.indexOf("youtu.be") !== -1;
+
+    if (isYouTube) {
+      var id = youTubeId(raw);
+      return (
+        '<div class="video-frame">' +
+        '<iframe class="lesson-video" src="https://www.youtube.com/embed/' +
+        esc(id) +
+        '?rel=0" title="' +
+        esc(lessonTitle) +
+        '" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen loading="lazy"></iframe>' +
+        "</div>"
+      );
+    }
+
+    var t = pack().quizText;
+    return (
+      '<div class="video-frame">' +
+      '<video class="lesson-video" controls preload="metadata" playsinline poster="assets/videos/posters/' +
+      esc(lessonId) +
+      '.jpg" aria-label="' +
+      esc(lessonTitle) +
+      '">' +
+      '<source class="lesson-video-source" data-lesson="' +
+      esc(lessonId) +
+      '" src="' +
+      esc(encodeURI(raw)) +
+      '" type="video/mp4" />' +
+      "</video>" +
+      '<div class="video-overlay" data-overlay="' + esc(lessonId) + '">' +
+      "<p>" + esc(t.readyForQuiz) + "</p>" +
+      quizButtonMarkup(lessonId, "btn-primary", t.takeQuiz) +
+      "</div>" +
+      "</div>"
+    );
+  }
+
+  function youTubeId(url) {
+    try {
+      var parsed = new URL(url);
+      if (parsed.hostname.indexOf("youtu.be") !== -1) {
+        return parsed.pathname.slice(1);
+      }
+      if (parsed.pathname.indexOf("/embed/") !== -1) {
+        return parsed.pathname.split("/embed/")[1].split("/")[0];
+      }
+      return parsed.searchParams.get("v") || "";
+    } catch (e) {
+      var match = url.match(/(?:youtu\.be\/|\/embed\/|watch\?v=)([^?&/]+)/);
+      return match ? match[1] : "";
+    }
   }
 
   function renderLessons() {
-    const langPack = window.LanguageService.LANGUAGES[currentLang];
-    const lessonGrid = document.getElementById("lesson-grid");
+    var p = pack();
+    var t = p.quizText;
+    var list = document.getElementById("lesson-list");
+    if (!list) return;
 
-    lessonGrid.innerHTML = lessonOrder
-      .map((lessonId, index) => {
-        const lesson = langPack.lessonsData[lessonId];
-        const stats = window.StorageService.getLessonStats(lessonId);
-        const rawVideoPath = window.LanguageService.LESSON_VIDEO_MAP[lessonId][currentLang];
-        const isYouTube = rawVideoPath.includes("youtube.com") || rawVideoPath.includes("youtu.be");
-        const video = isYouTube ? rawVideoPath : encodePath(rawVideoPath);
-        const trophy = getTrophyIcon(stats.bestPercent);
+    list.innerHTML = LESSONS.map(function (lessonId, index) {
+      var lesson = p.lessonsData[lessonId];
+      var stats = window.StorageService.getLessonStats(lessonId);
+      var isPassed = stats.bestPercent >= PASS_PERCENT;
+      var blocker = window.StorageService.lockedBy(LESSONS, lessonId, PASS_PERCENT);
+      var isLocked = blocker > 0;
 
-        let videoElement = "";
-        if (isYouTube) {
-          let videoId = "";
+      // Empty state: a student who has not tried this yet is told so
+      // plainly, rather than being shown a score of 0 that reads as failure.
+      var chip =
+        stats.attempts === 0
+          ? '<span class="chip chip-empty">' + esc(t.notStarted) + "</span>"
+          : '<span class="chip' +
+            (isPassed ? " chip-passed" : "") +
+            '">' +
+            esc(t.best) +
+            ' <span class="num">' +
+            stats.highestScore +
+            "/" +
+            QUESTIONS_PER_QUIZ +
+            "</span></span>";
+
+      var attemptChip =
+        stats.attempts > 0
+          ? '<span class="chip">' +
+            esc(t.attempts) +
+            ' <span class="num">' +
+            stats.attempts +
+            "</span></span>"
+          : "";
+
+      return (
+        '<article class="lesson reveal lesson-' +
+        (index + 1) +
+        (isPassed ? " is-passed" : "") +
+        '" id="' +
+        esc(lessonId) +
+        '">' +
+        '<div class="lesson-index" aria-hidden="true">' + (index + 1) + "</div>" +
+        '<div class="lesson-body">' +
+        '<div class="lesson-head">' +
+        '<div class="lesson-figure ' +
+        FIGURES[index] +
+        '" role="img" aria-label="' +
+        esc(t.figureLabel) +
+        '"></div>' +
+        "<div>" +
+        "<h3>" + esc(lesson.title) + "</h3>" +
+        // The formal maths name is kept, quietly, so a teacher can still tell
+        // which lesson is which. The child reads the plain title above it.
+        (lesson.formalTitle
+          ? '<p class="lesson-formal">' + esc(lesson.formalTitle) + "</p>"
+          : "") +
+        '<p class="lesson-desc">' + esc(lesson.description) + "</p>" +
+        "</div>" +
+        "</div>" +
+        '<div class="lesson-meta">' +
+        starsMarkup(stats.bestPercent, t) +
+        chip +
+        attemptChip +
+        "</div>" +
+        '<ul class="objectives">' +
+        lesson.objectives
+          .map(function (objective) {
+            return "<li>" + esc(objective) + "</li>";
+          })
+          .join("") +
+        "</ul>" +
+        '<button class="btn ' +
+        (isLocked ? "btn-secondary is-locked" : "btn-primary") +
+        ' js-start-quiz" data-lesson="' +
+        esc(lessonId) +
+        '" type="button"' +
+        (isLocked
+          ? ' aria-describedby="lock-note-' + esc(lessonId) + '">' +
+            '<span class="lock-glyph" aria-hidden="true">&#128274;</span> ' +
+            esc(t.lockedChip)
+          : ">" + esc(isPassed ? t.retakeQuiz : t.takeQuiz)) +
+        "</button>" +
+        (isLocked
+          ? '<p class="lock-note" id="lock-note-' + esc(lessonId) + '">' +
+            esc(interpolate(t.lockedBody, { n: blocker, p: PASS_PERCENT })) +
+            "</p>"
+          : "") +
+        "</div>" +
+        '<div class="lesson-aside">' +
+        videoMarkup(lessonId, lesson.title) +
+        "</div>" +
+        "</article>"
+      );
+    }).join("");
+
+    bindVideos();
+  }
+
+  function bindVideos() {
+    var t = pack().quizText;
+    var music = document.getElementById("bgMusic");
+    var musicToggle = document.getElementById("music-toggle");
+    var videos = document.querySelectorAll("video.lesson-video");
+
+    Array.prototype.forEach.call(videos, function (video) {
+      video.addEventListener("play", function () {
+        // A lesson has audio of its own, so the background track stops and
+        // the settings switch is updated to match reality.
+        if (music && !music.paused) {
+          music.pause();
+          if (musicToggle) musicToggle.checked = false;
           try {
-            const parsed = new URL(video);
-            if (parsed.hostname.includes("youtu.be")) {
-              videoId = parsed.pathname.slice(1);
-            } else if (parsed.pathname.includes("/embed/")) {
-              videoId = parsed.pathname.split("/embed/")[1].split("/")[0];
-            } else {
-              videoId = parsed.searchParams.get("v") || "";
-            }
-          } catch (error) {
-            if (video.includes("youtu.be/")) {
-              videoId = video.split("youtu.be/")[1].split("?")[0];
-            } else if (video.includes("/embed/")) {
-              videoId = video.split("/embed/")[1].split("?")[0].split("/")[0];
-            } else if (video.includes("watch?v=")) {
-              videoId = video.split("watch?v=")[1].split("&")[0];
-            }
+            localStorage.setItem("musicEnabled", "false");
+          } catch (e) {
+            /* ignore */
           }
-          const embedUrl = `https://www.youtube.com/embed/${videoId}`;
-          videoElement = `<iframe class="lesson-video" src="${embedUrl}?rel=0" frameborder="0" allow="accelerometer; autoplay; clipboard-write; encrypted-media; gyroscope; picture-in-picture" allowfullscreen style="width: 100%; aspect-ratio: 16/9; border-radius: var(--radius-sm); margin: 1rem 0;"></iframe>`;
-        } else {
-          videoElement = `
-              <video class="lesson-video" controls preload="metadata" poster="assets/videos/posters/${lessonId}.jpg" aria-label="Lesson video for ${lesson.title}">
-                <source class="lesson-video-source" data-lesson="${lessonId}" src="${video}" type="video/mp4" />
-                Your browser does not support video playback.
-              </video>`;
         }
 
-        return `
-          <article class="lesson-card reveal fade-up" id="${lessonId}" style="display: flex; flex-direction: column;">
-            <p class="progress-chip" style="display: flex; align-items: center; justify-content: space-between;">
-              <span>Lesson ${index + 1} • Attempts ${stats.attempts}</span>
-              ${trophy ? `<span class="trophy" title="Highest Score Trophy" style="font-size: 1.5rem; line-height: 1;">${trophy}</span>` : ""}
-            </p>
-            <h3>${lesson.title}</h3>
-            <p style="flex-grow: 1;">${lesson.description}</p>
-            
-            <div class="video-container" style="position: relative;">
-              ${videoElement}
-              <div class="video-overlay" style="display: none; position: absolute; inset: 0; background: rgba(15, 23, 42, 0.8); backdrop-filter: blur(4px); border-radius: var(--radius-sm);  align-items: center; justify-content: center; flex-direction: column; gap: 1rem; color: white; margin: 1rem 0;">
-                <p style="font-weight: 700; font-size: 1.2rem;">Ready for the Quiz?</p>
-                <button class="btn btn-primary overlay-quiz-btn" data-lesson="${lessonId}" type="button">Take Quiz Now</button>
-              </div>
-            </div>
+        var overlay = video.parentElement.querySelector(".video-overlay");
+        if (overlay) overlay.classList.remove("is-visible");
 
-            <ul class="objectives" style="margin-bottom: 1.5rem;">
-              ${lesson.objectives.map((objective) => `<li>${objective}</li>`).join("")}
-            </ul>
-            <div class="card-actions" style="margin-top: auto;">
-              <button class="btn btn-primary lesson-quiz-btn" data-lesson="${lessonId}" style="width: 100%;" type="button">${langPack.quizText.takeQuiz}</button>
-            </div>
-          </article>
-        `;
-      })
-      .join("");
-
-    document.querySelectorAll(".lesson-quiz-btn, .overlay-quiz-btn").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        handleQuizStart(btn.dataset.lesson, currentLang);
-      });
-    });
-    const bgMusic = document.getElementById("bgMusic");
-    const musicToggle = document.getElementById("music-toggle");
-    const videos = document.querySelectorAll("video.lesson-video");
-    videos.forEach((video) => {
-      video.addEventListener("play", () => {
-        bgMusic.pause();
-        musicToggle.checked = false;
-        localStorage.setItem("musicEnabled", "false");
-        const overlay = video.parentElement.querySelector(".video-overlay");
-        if (overlay) overlay.style.display = "none";
-        
-        videos.forEach((v) => {
-          if (v !== video) v.pause();
+        Array.prototype.forEach.call(videos, function (other) {
+          if (other !== video) other.pause();
         });
       });
 
-      video.addEventListener("ended", () => {
-        const overlay = video.parentElement.querySelector(".video-overlay");
-        if (overlay) overlay.style.display = "flex";
+      video.addEventListener("ended", function () {
+        var overlay = video.parentElement.querySelector(".video-overlay");
+        if (overlay) overlay.classList.add("is-visible");
       });
     });
 
-    // <source> fires error (and does not bubble) when the file is missing.
-    document.querySelectorAll("source.lesson-video-source").forEach((source) => {
-      source.addEventListener("error", () => {
-        const container = source.closest(".video-container");
-        if (!container) return;
-        const lessonId = source.dataset.lesson;
-        container.innerHTML = `
-          <div class="video-missing">
-            <span class="video-missing-icon" aria-hidden="true">🎬</span>
-            <p class="video-missing-title">${langPack.quizText.videoSoonTitle}</p>
-            <p class="video-missing-body">${langPack.quizText.videoSoonBody}</p>
-            <button class="btn btn-primary" data-lesson="${lessonId}" type="button">${langPack.quizText.takeQuiz}</button>
-          </div>`;
-        container.querySelector("button").addEventListener("click", () => {
-          handleQuizStart(lessonId, currentLang);
+    // <source> fires error, and does not bubble, when the file is absent.
+    Array.prototype.forEach.call(
+      document.querySelectorAll("source.lesson-video-source"),
+      function (source) {
+        source.addEventListener("error", function () {
+          var frame = source.closest(".video-frame");
+          if (!frame) return;
+          var lessonId = source.dataset.lesson;
+
+          var missing = document.createElement("div");
+          missing.className = "video-missing";
+          missing.innerHTML =
+            '<p class="video-missing-title">' + esc(t.videoSoonTitle) + "</p>" +
+            '<p class="video-missing-body">' + esc(t.videoSoonBody) + "</p>" +
+            quizButtonMarkup(lessonId, "btn-secondary", t.takeQuiz);
+
+          frame.replaceWith(missing);
         });
-      });
-    });
+      }
+    );
   }
 
-  function renderQuizDashboard() {
-    const langPack = window.LanguageService.LANGUAGES[currentLang];
-    const container = document.getElementById("quiz-dashboard");
+  /* ------------------------------------------------------------------------
+     Scoreboard
+     ------------------------------------------------------------------------ */
+  function renderDashboard() {
+    var p = pack();
+    var t = p.quizText;
+    var container = document.getElementById("quiz-dashboard");
+    if (!container) return;
 
-    container.innerHTML = lessonOrder
-      .map((lessonId, idx) => {
-        const stats = window.StorageService.getLessonStats(lessonId);
-        const best = `${stats.highestScore}/15`;
-        const trophy = getTrophyIcon(stats.bestPercent);
+    var rows = LESSONS.map(function (lessonId, index) {
+      var stats = window.StorageService.getLessonStats(lessonId);
+      var isPassed = stats.bestPercent >= PASS_PERCENT;
+      var untouched = stats.attempts === 0;
+      var isLocked =
+        window.StorageService.lockedBy(LESSONS, lessonId, PASS_PERCENT) > 0;
 
-        return `
-          <article class="quiz-card reveal fade-up" style="display: flex; flex-direction: column;">
-            <h3 style="display: flex; align-items: center; justify-content: space-between;">
-              Quiz ${idx + 1}
-              ${trophy ? `<span title="Highest Score Trophy" style="font-size: 1.5rem; line-height: 1;">${trophy}</span>` : ""}
-            </h3>
-            <p style="margin-bottom: 0.8rem; flex-grow: 1;">${langPack.lessonsData[lessonId].title}</p>
-            <div style="margin-bottom: 1.2rem;">
-              <p><strong>${langPack.quizText.highestScore}:</strong> ${best}</p>
-              <p><strong>${langPack.quizText.bestPercentage}:</strong> ${stats.bestPercent}%</p>
-              <p><strong>${langPack.quizText.attempts}:</strong> ${stats.attempts}</p>
-            </div>
-            <button class="btn btn-ghost dashboard-start" style="margin-top: auto;" data-lesson="${lessonId}" type="button">${langPack.quizText.takeQuiz}</button>
-          </article>
-        `;
-      })
-      .join("");
+      return (
+        '<tr' + (isLocked ? ' class="is-locked-row"' : "") + ">" +
+        '<td class="score-title">' +
+        esc(t.quiz) + " " + (index + 1) +
+        "<small>" + esc(p.lessonsData[lessonId].title) + "</small>" +
+        "</td>" +
+        '<td class="col-stars" data-label="' + esc(t.stars) + '">' +
+        starsMarkup(stats.bestPercent, t) +
+        "</td>" +
+        '<td class="col-num" data-label="' + esc(t.highestScore) + '">' +
+        (untouched
+          ? '<span class="score-empty">&mdash;</span>'
+          : '<span class="num">' + stats.highestScore + "/" + QUESTIONS_PER_QUIZ + "</span>") +
+        "</td>" +
+        '<td class="col-num" data-label="' + esc(t.bestPercentage) + '">' +
+        (untouched
+          ? '<span class="score-empty">&mdash;</span>'
+          : '<span class="num">' + stats.bestPercent + "%</span>") +
+        "</td>" +
+        '<td class="col-num" data-label="' + esc(t.attempts) + '">' +
+        '<span class="num">' + stats.attempts + "</span>" +
+        "</td>" +
+        '<td class="col-action">' +
+        '<button class="btn ' +
+        (isLocked ? "btn-secondary is-locked" : untouched ? "btn-primary" : "btn-secondary") +
+        ' js-start-quiz" data-lesson="' +
+        esc(lessonId) +
+        '" type="button">' +
+        (isLocked
+          ? '<span class="lock-glyph" aria-hidden="true">&#128274;</span> ' + esc(t.lockedChip)
+          : esc(untouched ? t.start : isPassed ? t.retake : t.tryAgain)) +
+        "</button>" +
+        "</td>" +
+        "</tr>"
+      );
+    }).join("");
 
-    const unlocked = window.StorageService.allPassed(lessonOrder, PASS_PERCENT);
-    const certCard = document.createElement("article");
-    certCard.className = "quiz-card certificate-unlock reveal fade-up";
-    certCard.style.cssText = "display: flex; flex-direction: column;";
-    certCard.innerHTML = `
-      <h3>${langPack.quizText.printCertificate}</h3>
-      <p style="margin-bottom: 0.8rem; flex-grow: 1;">${langPack.quizText.unlockHint}</p>
-      <div style="margin-bottom: 1.2rem;">
-        <p><strong>${unlocked ? langPack.quizText.unlocked : langPack.quizText.locked}</strong></p>
-      </div>
-      <button class="btn btn-primary" id="print-certificate-btn" style="margin-top: auto;" type="button" ${unlocked ? "" : "disabled"}>
-        ${langPack.quizText.printCertificate}
-      </button>
-    `;
-    container.appendChild(certCard);
+    var unlocked = window.StorageService.allPassed(LESSONS, PASS_PERCENT);
 
-    document.querySelectorAll(".dashboard-start").forEach((btn) => {
-      btn.addEventListener("click", () => {
-        handleQuizStart(btn.dataset.lesson, currentLang);
-      });
-    });
+    container.innerHTML =
+      '<div class="scoreboard">' +
+      "<table>" +
+      "<caption class=\"visually-hidden\">" + esc(t.scoreboardCaption) + "</caption>" +
+      "<thead><tr>" +
+      "<th scope=\"col\">" + esc(t.quiz) + "</th>" +
+      "<th scope=\"col\">" + esc(t.stars) + "</th>" +
+      "<th scope=\"col\" class=\"col-num\">" + esc(t.highestScore) + "</th>" +
+      "<th scope=\"col\" class=\"col-num\">" + esc(t.bestPercentage) + "</th>" +
+      "<th scope=\"col\" class=\"col-num\">" + esc(t.attempts) + "</th>" +
+      "<th scope=\"col\"><span class=\"visually-hidden\">" + esc(t.action) + "</span></th>" +
+      "</tr></thead>" +
+      "<tbody>" + rows + "</tbody>" +
+      "</table>" +
+      "</div>" +
+      '<div class="certificate-cta' + (unlocked ? " is-unlocked" : "") + '">' +
+      '<div class="certificate-cta-text">' +
+      "<h3>" + esc(t.certTitle) + "</h3>" +
+      "<p>" + esc(unlocked ? t.unlocked : t.unlockHint) + "</p>" +
+      "</div>" +
+      '<button class="btn btn-primary" id="print-certificate-btn" type="button"' +
+      (unlocked ? "" : " disabled") +
+      ">" +
+      esc(t.printCertificate) +
+      "</button>" +
+      "</div>";
 
-    const printButton = document.getElementById("print-certificate-btn");
-    if (printButton && unlocked) {
-      printButton.addEventListener("click", () => openCertificateModal(currentLang));
+    if (unlocked) {
+      var btn = document.getElementById("print-certificate-btn");
+      if (btn) btn.addEventListener("click", openCertificate);
     }
   }
 
-  function openCertificateModal(lang) {
-    const t = window.LanguageService.LANGUAGES[lang].quizText;
-    const today = new Date();
-    const dateText = today.toLocaleDateString(undefined, {
+  /* ------------------------------------------------------------------------
+     Certificate
+     ------------------------------------------------------------------------ */
+  function openCertificate() {
+    var t = pack().quizText;
+    var modal = document.getElementById("certificate-modal");
+    var body = document.getElementById("certificate-body");
+    if (!modal || !body) return;
+
+    var total = 0;
+    var totalStars = 0;
+    LESSONS.forEach(function (id) {
+      var lessonStats = window.StorageService.getLessonStats(id);
+      total += lessonStats.bestPercent;
+      totalStars += starCount(lessonStats.bestPercent);
+    });
+    var average = Math.round(total / LESSONS.length);
+
+    // One star per lesson on the award, filled for each lesson passed, so the
+    // row reads as "these are the four lessons you finished".
+    var certStars = "";
+    LESSONS.forEach(function (id) {
+      var earned =
+        window.StorageService.getLessonStats(id).bestPercent >= PASS_PERCENT;
+      certStars +=
+        '<span class="star' + (earned ? " is-earned" : "") + '"></span>';
+    });
+
+    var date = new Date().toLocaleDateString(undefined, {
       year: "numeric",
       month: "long",
-      day: "numeric",
+      day: "numeric"
     });
 
-    const percent = window.StorageService.overallCompletionPercent(lessonOrder.length);
+    body.innerHTML =
+      '<article class="certificate">' +
+      '<div class="certificate-seal" aria-hidden="true"><span>3</span><span>4</span></div>' +
+      '<h2 id="certificate-title">' + esc(t.certTitle) + "</h2>" +
+      // The stars the child actually collected, printed on the award. This is
+      // the thing they will want to show someone.
+      '<div class="stars stars-lg certificate-stars" role="img" aria-label="' +
+      esc(totalStars + " " + (totalStars === 1 ? t.starOne : t.starMany)) +
+      '">' + certStars + "</div>" +
+      '<p class="certificate-awarded">' + esc(t.certAwarded) + "</p>" +
+      '<p class="certificate-name">' +
+      esc(window.StorageService.getUserName() || t.defaultLearner) +
+      "</p>" +
+      '<p class="certificate-body">' + esc(t.certBody) + "</p>" +
+      '<dl class="certificate-meta">' +
+      "<div><dt>" + esc(t.certDate) + "</dt><dd>" + esc(date) + "</dd></div>" +
+      "<div><dt>" + esc(t.bestPercentage) + "</dt><dd>" + average + "%</dd></div>" +
+      "<div><dt>" + esc(t.lessonsPassed) + "</dt><dd>" +
+      LESSONS.length + "/" + LESSONS.length + "</dd></div>" +
+      "</dl>" +
+      '<div class="certificate-actions">' +
+      '<button id="close-certificate" class="btn btn-secondary" type="button">' +
+      esc(t.certClose) +
+      "</button>" +
+      '<button id="print-certificate-now" class="btn btn-primary" type="button">' +
+      esc(t.certPrint) +
+      "</button>" +
+      "</div>" +
+      "</article>";
 
-    certificateBody.innerHTML = `
-      <article class="certificate-card">
-        <h2 id="certificate-title">${t.certTitle}</h2>
-        <p>${t.certAwarded}</p>
-        <p class="certificate-name">${window.StorageService.getUserName() || "Fraction Flow Learner"}</p>
-        <p>${t.certBody}</p>
-        <div class="certificate-meta">
-          <p><strong>${t.certDate}:</strong> ${dateText}</p>
-          <p><strong>${t.bestPercentage}:</strong> ${percent}%</p>
-          <p><strong>${t.attempts}:</strong> ${t.certCompletion}</p>
-        </div>
-        <div class="certificate-actions">
-          <button id="close-certificate" class="btn btn-ghost" type="button">${t.certClose}</button>
-          <button id="print-certificate-now" class="btn btn-primary" type="button">${t.certPrint}</button>
-        </div>
-      </article>
-    `;
+    window.UI.openModal(modal);
 
-    certificateModal.classList.add("open");
-    certificateModal.setAttribute("aria-hidden", "false");
-
-    document.getElementById("close-certificate").addEventListener("click", closeCertificateModal);
-    document.getElementById("print-certificate-now").addEventListener("click", () => window.print());
+    document
+      .getElementById("close-certificate")
+      .addEventListener("click", function () {
+        window.UI.closeModal(modal);
+      });
+    document
+      .getElementById("print-certificate-now")
+      .addEventListener("click", function () {
+        window.print();
+      });
   }
 
-  function closeCertificateModal() {
-    certificateModal.classList.remove("open");
-    certificateModal.setAttribute("aria-hidden", "true");
-  }
-
-  function setupCertificateModal() {
-    document.getElementById("close-certificate-modal").addEventListener("click", closeCertificateModal);
-    certificateModal.addEventListener("click", (event) => {
-      if (event.target === certificateModal) {
-        closeCertificateModal();
-      }
+  /* ------------------------------------------------------------------------
+     Locked quiz notice
+     ------------------------------------------------------------------------ */
+  function interpolate(template, values) {
+    return String(template).replace(/\{(\w+)\}/g, function (match, key) {
+      return Object.prototype.hasOwnProperty.call(values, key) ? values[key] : match;
     });
-
-    document.addEventListener("keydown", (e) => {
-      if (e.key === "Escape" && certificateModal.classList.contains("open")) {
-        closeCertificateModal();
-      }
-    });
   }
 
-  function handleQuizStart(lessonId, lang) {
-    if (!window.StorageService.getUserName()) {
-      window.AppService.pendingQuiz = { lessonId, lang };
-      const pack = window.LanguageService.LANGUAGES[currentLang];
-      
-      document.getElementById("name-modal-title").textContent = pack.quizText.namePromptTitle;
-      document.getElementById("name-modal-desc").textContent = pack.quizText.namePromptDesc;
-      document.getElementById("save-name-btn").textContent = pack.quizText.saveAndContinue;
-      document.getElementById("user-name-input").placeholder = pack.quizText.yourNameHolder;
-      document.getElementById("user-name-input").value = "";
-      
-      const nameModal = document.getElementById("name-modal");
-      nameModal.classList.add("open");
-      nameModal.setAttribute("aria-hidden", "false");
-      document.getElementById("user-name-input").focus();
-    } else {
-      window.QuizService.startQuiz(lessonId, lang);
+  function showLockedNotice(blockerNumber) {
+    var t = pack().quizText;
+    var modal = document.getElementById("locked-modal");
+    if (!modal) return;
+
+    var values = { n: blockerNumber, p: PASS_PERCENT };
+    document.getElementById("locked-title").textContent = interpolate(t.lockedTitle, values);
+    document.getElementById("locked-body").textContent = interpolate(t.lockedBody, values);
+
+    var goBtn = document.getElementById("locked-go");
+    goBtn.textContent = interpolate(t.lockedGo, values);
+
+    var dismissBtn = document.getElementById("locked-dismiss");
+    dismissBtn.textContent = t.certClose;
+
+    function cleanup() {
+      goBtn.removeEventListener("click", onGo);
+      dismissBtn.removeEventListener("click", onDismiss);
     }
+
+    function onGo() {
+      cleanup();
+      window.UI.closeModal(modal);
+      // Send them to the quiz that is actually blocking progress.
+      window.setTimeout(function () {
+        requestQuiz(LESSONS[blockerNumber - 1]);
+      }, 180);
+    }
+
+    function onDismiss() {
+      cleanup();
+      window.UI.closeModal(modal);
+    }
+
+    goBtn.addEventListener("click", onGo);
+    dismissBtn.addEventListener("click", onDismiss);
+
+    window.UI.openModal(modal, { focus: "#locked-go" });
+    window.UI.bindBackdrop(modal);
+    window.UI.setEscapeHandler(modal);
+  }
+
+  /* ------------------------------------------------------------------------
+     Name gate
+     ------------------------------------------------------------------------ */
+  function requestQuiz(lessonId) {
+    // Quizzes open in order. Enforced here rather than only on the buttons,
+    // so a stale card or a keyboard shortcut cannot slip past the lock.
+    var blocker = window.StorageService.lockedBy(LESSONS, lessonId, PASS_PERCENT);
+    if (blocker > 0) {
+      showLockedNotice(blocker);
+      return;
+    }
+
+    if (window.StorageService.getUserName()) {
+      window.QuizService.startQuiz(lessonId, currentLang);
+      return;
+    }
+
+    pendingQuiz = lessonId;
+    var modal = document.getElementById("name-modal");
+    var input = document.getElementById("user-name-input");
+    var error = document.getElementById("name-error");
+
+    if (input) {
+      input.value = "";
+      input.removeAttribute("aria-invalid");
+    }
+    if (error) error.textContent = "";
+
+    window.UI.openModal(modal, { focus: "#user-name-input" });
   }
 
   function setupNameModal() {
-    const modal = document.getElementById("name-modal");
-    const closeBtn = document.getElementById("close-name-modal");
-    const saveBtn = document.getElementById("save-name-btn");
-    const input = document.getElementById("user-name-input");
+    var modal = document.getElementById("name-modal");
+    var form = document.getElementById("name-form");
+    var input = document.getElementById("user-name-input");
+    var error = document.getElementById("name-error");
+    var closeBtn = document.getElementById("close-name-modal");
+    if (!modal || !form) return;
 
-    function closeNameModal() {
-      modal.classList.remove("open");
-      modal.setAttribute("aria-hidden", "true");
-    }
-
-    closeBtn.addEventListener("click", closeNameModal);
-    modal.addEventListener("click", (event) => {
-      if (event.target === modal) closeNameModal();
+    closeBtn.addEventListener("click", function () {
+      window.UI.closeModal(modal);
     });
+    window.UI.bindBackdrop(modal);
 
-    saveBtn.addEventListener("click", () => {
-      const name = input.value.trim();
-      if (name) {
-        window.StorageService.saveUserName(name);
-        closeNameModal();
-        if (window.AppService.pendingQuiz) {
-          window.QuizService.startQuiz(window.AppService.pendingQuiz.lessonId, window.AppService.pendingQuiz.lang);
-          window.AppService.pendingQuiz = null;
-        }
+    form.addEventListener("submit", function (event) {
+      event.preventDefault();
+      var name = input.value.trim();
+
+      // Inline validation. Previously an empty name silently did nothing,
+      // which left the student pressing a button that appeared broken.
+      if (!name) {
+        input.setAttribute("aria-invalid", "true");
+        error.textContent = pack().quizText.nameRequired;
+        input.focus();
+        return;
+      }
+
+      input.removeAttribute("aria-invalid");
+      error.textContent = "";
+      window.StorageService.saveUserName(name);
+      window.UI.closeModal(modal);
+
+      if (pendingQuiz) {
+        var lessonId = pendingQuiz;
+        pendingQuiz = null;
+        window.setTimeout(function () {
+          window.QuizService.startQuiz(lessonId, currentLang);
+        }, 180);
       }
     });
 
-    input.addEventListener("keydown", (e) => {
-      if (e.key === "Enter") saveBtn.click();
+    input.addEventListener("input", function () {
+      if (input.value.trim()) {
+        input.removeAttribute("aria-invalid");
+        error.textContent = "";
+      }
     });
   }
 
-  function renderHeroProgress() {
-    const percent = window.StorageService.overallCompletionPercent(lessonOrder.length);
-    document.getElementById("hero-progress-bar").style.width = `${percent}%`;
+  /* ------------------------------------------------------------------------
+     Settings
+     ------------------------------------------------------------------------ */
+  function setupSettings() {
+    var modal = document.getElementById("settings-modal");
+    var open = document.getElementById("settings-toggle");
+    var close = document.getElementById("close-settings-modal");
+    if (!modal || !open) return;
+
+    open.addEventListener("click", function () {
+      window.UI.openModal(modal);
+    });
+    close.addEventListener("click", function () {
+      window.UI.closeModal(modal);
+    });
+    window.UI.bindBackdrop(modal);
+
+    var select = document.getElementById("language-select");
+    if (select) {
+      select.addEventListener("change", function () {
+        applyLanguage(select.value);
+      });
+    }
+  }
+
+  function setupCertificateModal() {
+    var modal = document.getElementById("certificate-modal");
+    if (!modal) return;
+    document
+      .getElementById("close-certificate-modal")
+      .addEventListener("click", function () {
+        window.UI.closeModal(modal);
+      });
+    window.UI.bindBackdrop(modal);
+  }
+
+  /* ------------------------------------------------------------------------
+     Background music
+     ------------------------------------------------------------------------ */
+  function setupMusic() {
+    var audio = document.getElementById("bgMusic");
+    var toggle = document.getElementById("music-toggle");
+    if (!audio || !toggle) return;
+
+    var enabled = false;
+    try {
+      enabled = localStorage.getItem("musicEnabled") === "true";
+    } catch (e) {
+      /* ignore */
+    }
+    toggle.checked = enabled;
+
+    if (enabled) {
+      // Browsers block autoplay until the page has been interacted with, so
+      // the first gesture starts it instead of failing silently.
+      audio.play().catch(function () {
+        var resume = function () {
+          if (toggle.checked) audio.play().catch(function () {});
+          document.removeEventListener("pointerdown", resume);
+        };
+        document.addEventListener("pointerdown", resume, { once: true });
+      });
+    }
+
+    toggle.addEventListener("change", function () {
+      try {
+        localStorage.setItem("musicEnabled", String(toggle.checked));
+      } catch (e) {
+        /* ignore */
+      }
+      if (toggle.checked) {
+        audio.play().catch(function () {});
+      } else {
+        audio.pause();
+        audio.currentTime = 0;
+      }
+    });
+  }
+
+  /* ------------------------------------------------------------------------
+     Language. Applies every translated string on the page in one pass via
+     the data-i18n attributes, so adding a string to language.js no longer
+     requires a matching querySelector here.
+     ------------------------------------------------------------------------ */
+  function lookup(path) {
+    return path.split(".").reduce(function (node, key) {
+      return node && node[key] !== undefined ? node[key] : undefined;
+    }, pack());
   }
 
   function applyLanguage(lang) {
+    if (!window.LanguageService.LANGUAGES[lang]) return;
     currentLang = lang;
-    const pack = window.LanguageService.LANGUAGES[lang];
-    const selector = document.getElementById("language-select");
-    if (selector) {
-      selector.value = lang;
-    }
     window.StorageService.saveLanguage(lang);
+    document.documentElement.lang = lang === "bi" ? "ceb" : lang;
 
-    navText(lang);
-    document.querySelector(".hero h1").textContent = pack.hero.title;
-    document.querySelector(".hero-content > p:nth-of-type(2)").textContent = pack.hero.intro;
-    document.querySelector(".hero-actions .btn-primary").textContent = pack.hero.start;
-    document.querySelector(".hero-actions .btn-ghost").textContent = pack.hero.quiz;
-    document.getElementById("settings-toggle").textContent = pack.settings.button;
-    document.getElementById("settings-modal-title").textContent = pack.settings.title;
-    document.getElementById("settings-language-label").textContent = pack.settings.languageLabel;
-    document.getElementById("section-transition-text").textContent = pack.quizText.transitionLoading;
+    var select = document.getElementById("language-select");
+    if (select) select.value = lang;
 
-    document.querySelector("#lessons .section-head h2").textContent = pack.lessons.heading;
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-i18n]"),
+      function (el) {
+        var value = lookup(el.dataset.i18n);
+        if (typeof value === "string") el.textContent = value;
+      }
+    );
 
+    Array.prototype.forEach.call(
+      document.querySelectorAll("[data-i18n-placeholder]"),
+      function (el) {
+        var value = lookup(el.dataset.i18nPlaceholder);
+        if (typeof value === "string") el.placeholder = value;
+      }
+    );
+
+    // Nav labels come from the ordered `nav` array in the language pack.
+    var navLabels = pack().nav;
+    Array.prototype.forEach.call(
+      document.querySelectorAll(".nav-link"),
+      function (link, index) {
+        if (navLabels[index]) link.textContent = navLabels[index];
+      }
+    );
+
+    renderAll();
+  }
+
+  function renderAll() {
     renderLessons();
-    renderQuizDashboard();
-    renderHeroProgress();
-    moveIndicator();
-    window.AnimationService.initScrollReveal();
+    renderDashboard();
+    renderProgress();
+    window.UI.observeReveals();
   }
 
-  function setupLanguageControl() {
-    const selector = document.getElementById("language-select");
-    selector.addEventListener("change", () => applyLanguage(selector.value));
-  }
-
-  function setupSettingsModal() {
-    const modal = document.getElementById("settings-modal");
-    const openBtn = document.getElementById("settings-toggle");
-    const closeBtn = document.getElementById("close-settings-modal");
-
-    function closeSettingsModal() {
-      modal.classList.remove("open");
-      modal.setAttribute("aria-hidden", "true");
-    }
-
-    openBtn.addEventListener("click", () => {
-      modal.classList.add("open");
-      modal.setAttribute("aria-hidden", "false");
-      if (window.innerWidth <= 760) {
-        document.getElementById("nav-links").classList.remove("open");
-        document.getElementById("menu-toggle").setAttribute("aria-expanded", "false");
-      }
-    });
-
-    closeBtn.addEventListener("click", closeSettingsModal);
-    modal.addEventListener("click", (event) => {
-      if (event.target === modal) {
-        closeSettingsModal();
-      }
-    });
-
-    document.addEventListener("keydown", (event) => {
-      if (event.key === "Escape" && modal.classList.contains("open")) {
-        closeSettingsModal();
-      }
-    });
-  }
-
-  function setupSectionTransitions() {
-    document.querySelectorAll('a[href^="#"]').forEach((anchor) => {
-      anchor.addEventListener("click", () => {
-        window.AnimationService.sectionTransition("show");
-        setTimeout(() => window.AnimationService.sectionTransition("hide"), 280);
-      });
-    });
-  }
-
-  // Tints the Android status bar of the installed app to match the theme.
-  function syncThemeColor(isDark) {
-    const meta = document.querySelector('meta[name="theme-color"]');
-    if (meta) meta.setAttribute("content", isDark ? "#0d0b26" : "#eef0ff");
-  }
-
-  function setupThemeControl() {
-    const toggleBtn = document.getElementById("theme-toggle");
-    const currentTheme = localStorage.getItem("fraction_flow_theme") || "light";
-
-    if (currentTheme === "dark") {
-      document.documentElement.setAttribute("data-theme", "dark");
-      toggleBtn.textContent = "☀️";
-      syncThemeColor(true);
-    }
-
-    toggleBtn.addEventListener("click", () => {
-      const isDark = document.documentElement.getAttribute("data-theme") === "dark";
-      if (isDark) {
-        document.documentElement.removeAttribute("data-theme");
-        localStorage.setItem("fraction_flow_theme", "light");
-        toggleBtn.textContent = "🌙";
-      } else {
-        document.documentElement.setAttribute("data-theme", "dark");
-        localStorage.setItem("fraction_flow_theme", "dark");
-        toggleBtn.textContent = "☀️";
-      }
-      syncThemeColor(!isDark);
+  /* ------------------------------------------------------------------------
+     One delegated handler for every "start quiz" button on the page. These
+     buttons are re-rendered constantly, so delegation avoids rebinding and
+     the listener leaks that came with it.
+     ------------------------------------------------------------------------ */
+  function setupQuizLaunchers() {
+    document.addEventListener("click", function (event) {
+      var btn = event.target.closest(".js-start-quiz");
+      if (!btn) return;
+      event.preventDefault();
+      requestQuiz(btn.dataset.lesson);
     });
   }
 
   function init() {
-    const savedLanguage = window.StorageService.getLanguage();
-    if (window.LanguageService.LANGUAGES[savedLanguage]) {
-      currentLang = savedLanguage;
-    }
+    var saved = window.StorageService.getLanguage();
+    if (window.LanguageService.LANGUAGES[saved]) currentLang = saved;
 
-    document.getElementById("year").textContent = new Date().getFullYear();
+    var year = document.getElementById("year");
+    if (year) year.textContent = new Date().getFullYear();
+
+    setupTheme();
     setupNav();
-    setupSettingsModal();
-    setupLanguageControl();
-    setupThemeControl();
-    setupSectionTransitions();
-    setupCertificateModal();
+    setupSettings();
     setupNameModal();
+    setupCertificateModal();
+    setupMusic();
+    setupQuizLaunchers();
 
     applyLanguage(currentLang);
-    window.AnimationService.setupLoader();
-    window.AnimationService.setupRipple();
-    window.AnimationService.initScrollReveal();
+    window.Motion.init();
   }
 
   window.AppService = {
-    renderAll: () => {
-      renderLessons();
-      renderQuizDashboard();
-      renderHeroProgress();
-      window.AnimationService.initScrollReveal();
-    },
+    renderAll: renderAll,
+    getLanguage: function () {
+      return currentLang;
+    }
   };
 
-  init();
+  if (document.readyState === "loading") {
+    document.addEventListener("DOMContentLoaded", init);
+  } else {
+    init();
+  }
 })();

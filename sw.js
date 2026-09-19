@@ -5,7 +5,7 @@
  * CSS/JS/JSON file and do not bump VERSION, browsers keep serving the old copy
  * from cache. Bumping it discards every old cache on the next load.
  */
-const VERSION = "v1";
+const VERSION = "v5";
 
 const SHELL = `ff-shell-${VERSION}`;
 const DATA = `ff-data-${VERSION}`;
@@ -17,16 +17,19 @@ const SHELL_ASSETS = [
   "index.html",
   "manifest.json",
   "css/fonts.css",
+  "css/tokens.css",
   "css/style.css",
   "css/animations.css",
   "css/responsive.css",
   "css/sound-toggle-switch.css",
   "js/storage.js",
   "js/language.js",
+  "js/ui.js",
   "js/quiz.js",
   "js/animations.js",
   "js/app.js",
   "assets/images/background-image.jpg",
+  "assets/images/math-pattern.svg",
   "assets/icons/icon-192.png",
   "assets/icons/icon-512.png",
   "assets/icons/icon-maskable-192.png",
@@ -48,8 +51,6 @@ for (const lesson of [1, 2, 3, 4]) {
   }
 }
 
-// allSettled, not addAll: posters and videos may be absent, and one 404 in
-// addAll would reject the whole install and leave the app with no worker.
 async function precache(cacheName, urls) {
   const cache = await caches.open(cacheName);
   await Promise.allSettled(urls.map((url) => cache.add(url)));
@@ -88,8 +89,6 @@ async function cacheFirst(request, cacheName) {
   return response;
 }
 
-// Fresh HTML when online, cached shell when not, so a forgotten VERSION bump
-// cannot strand the user on stale markup forever.
 async function networkFirst(request) {
   try {
     const response = await fetch(request);

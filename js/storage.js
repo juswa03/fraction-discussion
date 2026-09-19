@@ -55,6 +55,21 @@
     return Math.round((completed / totalLessons) * 100);
   }
 
+  /* Quizzes open in order: each one needs the previous quiz passed. The
+     first is always open. Returns the 1-based number of the quiz that is
+     blocking, or 0 when this one is unlocked. */
+  function lockedBy(lessonIds, lessonId, passPercent) {
+    const position = lessonIds.indexOf(lessonId);
+    if (position <= 0) return 0;
+
+    const all = readAllStats();
+    for (let i = 0; i < position; i++) {
+      const stats = all[lessonIds[i]];
+      if (!stats || (stats.bestPercent || 0) < passPercent) return i + 1;
+    }
+    return 0;
+  }
+
   function allPassed(lessonIds, passPercent) {
     const all = readAllStats();
     return lessonIds.every((lessonId) => {
@@ -83,6 +98,7 @@
     getLessonStats,
     updateLessonStats,
     overallCompletionPercent,
+    lockedBy,
     allPassed,
     getUserName,
     saveUserName,
