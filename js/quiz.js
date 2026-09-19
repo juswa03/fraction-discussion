@@ -170,6 +170,20 @@
     var strings = t();
     var hint = buildHint(q);
 
+    // Revisiting a question that was already answered. It is shown as it was
+    // left: the choice is marked and nothing can be changed.
+    var prior = state.answers[state.index] || null;
+    var isReview = !!prior;
+    var priorIndex = -1;
+    if (isReview) {
+      for (var pi = 0; pi < q.choices.length; pi++) {
+        if (q.choices[pi].id === prior.selectedChoiceId) {
+          priorIndex = pi;
+          break;
+        }
+      }
+    }
+
     var ticks = "";
     for (var i = 0; i < total; i++) {
       var cls = "q-tick";
@@ -190,8 +204,11 @@
       '<span class="q-remaining">' +
       (total - state.index - 1) + " " + esc(strings.remaining) +
       "</span>" +
-      '<span id="quiz-timer" class="q-timer" role="timer" aria-label="' +
-      esc(strings.timeLeft) + '">' + formatClock(SECONDS_PER_QUESTION) + "</span>" +
+      (isReview
+        ? '<span class="q-timer is-review">' +
+          esc(prior.timedOut ? strings.noAnswer : strings.answered) + "</span>"
+        : '<span id="quiz-timer" class="q-timer" role="timer" aria-label="' +
+          esc(strings.timeLeft) + '">' + formatClock(SECONDS_PER_QUESTION) + "</span>") +
       "</div>" +
       '<div class="q-ticks" role="progressbar" aria-valuemin="1" aria-valuemax="' +
       total + '" aria-valuenow="' + (state.index + 1) +
@@ -210,8 +227,13 @@
       '<div class="quiz-choices" role="group" aria-label="' + esc(strings.answerChoices) + '">' +
       q.choices
         .map(function (choice, index) {
+          var mark = "";
+          if (isReview && index === priorIndex) {
+            mark = prior.correct ? " is-correct" : " is-wrong";
+          }
           return (
-            '<button class="choice-btn" data-index="' + index + '" type="button">' +
+            '<button class="choice-btn' + mark + '" data-index="' + index +
+            '" type="button"' + (isReview ? " disabled" : "") + ">" +
             '<span class="choice-key" aria-hidden="true">' + (index + 1) + "</span>" +
             "<span>" + esc(choice.text) + "</span>" +
             "</button>"
@@ -225,9 +247,11 @@
           esc(strings.prev) +
           "</button>"
         : '<span class="kbd-hint">' + esc(strings.keyboardHint) + "</span>") +
-      '<button id="next-btn" class="btn btn-primary" type="button" disabled>' +
-      esc(isLast ? strings.finish : strings.next) +
-      "</button>" +
+      (isReview
+        ? '<button id="resume-btn" class="btn btn-primary" type="button">' +
+          esc(strings.next) + "</button>"
+        : '<button id="next-btn" class="btn btn-primary" type="button" disabled>' +
+          esc(isLast ? strings.finish : strings.next) + "</button>") +
       "</div>";
 
     bindQuestion(q, isLast);
@@ -237,10 +261,43 @@
     var choices = body.querySelectorAll(".choice-btn");
     var nextBtn = body.querySelector("#next-btn");
     var prevBtn = body.querySelector("#prev-btn");
+    var resumeBtn = body.querySelector("#resume-btn");
     var hintToggle = body.querySelector("#hint-toggle");
     var hintPanel = body.querySelector("#hint-panel");
 
     state.locked = false;
+
+    // Reviewing an answered question: nothing is bound except navigation,
+    // and no timer runs, because the question cannot be answered again.
+    if (resumeBtn) {
+      if (prevBtn) {
+        prevBtn.addEventListener("click", function () {
+          if (state.index === 0) return;
+          state.index--;
+          renderQuestion();
+        });
+      }
+      resumeBtn.addEventListener("click", function () {
+        // Back to wherever the attempt actually left off.
+        state.index = state.answers.length;
+        state.selected = null;
+        if (state.index >= state.quiz.questions.length) {
+          state.finished = true;
+          renderResult();
+        } else {
+          renderQuestion();
+        }
+      });
+      if (hintToggle && hintPanel) {
+        hintToggle.addEventListener("click", function () {
+          var show = hintPanel.hidden;
+          hintPanel.hidden = !show;
+          hintToggle.textContent = show ? t().hideHint : t().showHint;
+          hintToggle.setAttribute("aria-expanded", String(show));
+        });
+      }
+      return;
+    }
 
     if (hintToggle && hintPanel) {
       hintToggle.addEventListener("click", function () {
@@ -266,12 +323,12 @@
     if (prevBtn) {
       prevBtn.addEventListener("click", function () {
         if (state.locked || state.index === 0) return;
+        // The answer is NOT withdrawn. Going back shows what was chosen,
+        // read-only. Allowing a re-answer would tell the student their first
+        // pick was wrong, which is the answer key leaking one choice at a
+        // time across a retake.
         stopTimer();
         state.index--;
-        // The answer being returned to is withdrawn so it cannot be counted
-        // twice when it is answered again.
-        var previous = state.answers.pop();
-        if (previous && previous.correct) state.score--;
         state.selected = null;
         renderQuestion();
       });

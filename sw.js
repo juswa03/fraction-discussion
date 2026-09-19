@@ -5,7 +5,7 @@
  * CSS/JS/JSON file and do not bump VERSION, browsers keep serving the old copy
  * from cache. Bumping it discards every old cache on the next load.
  */
-const VERSION = "v6";
+const VERSION = "v7";
 
 const SHELL = `ff-shell-${VERSION}`;
 const DATA = `ff-data-${VERSION}`;

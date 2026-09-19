@@ -1427,6 +1427,13 @@ select {
   animation: timerPulse 1s ease-in-out infinite;
 }
 
+.q-timer.is-review {
+  color: var(--ink-faint);
+  background: var(--paper-sunken);
+  border-color: var(--line);
+  animation: none;
+}
+
 .q-timer.is-expired {
   color: var(--wrong);
   background: var(--wrong-wash);

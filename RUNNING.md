@@ -179,6 +179,12 @@ To change the pass mark, edit `PASS_PERCENT` in both `js/quiz.js` and
 counter and turns red for the last 30 seconds. If it runs out, the question is
 marked as "No answer" and the quiz moves on by itself.
 
+**Answered questions cannot be changed.** The Back button shows a previous
+question as it was left — the student's own choice marked, everything
+disabled — and Next returns them to where they stopped. Letting a question be
+re-answered would tell a student their first pick was wrong, which leaks the
+answer key one choice at a time across retakes.
+
 **Correct answers are not revealed during the quiz.** Answering shows only
 whether *your own* choice was right or wrong. Because quizzes can be retaken
 and the questions reshuffle each time, showing the right answer mid-quiz would
@@ -217,7 +223,7 @@ is worth adding once the real videos exist and their total size is known.
 **Bump `VERSION` at the top of `sw.js`.**
 
 ```js
-const VERSION = "v6";   // -> "v7"
+const VERSION = "v7";   // -> "v8"
 ```
 
 Because the app stores copies of its own files for offline use, browsers keep
