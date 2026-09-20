@@ -813,6 +813,118 @@
     }
   }
 
+  /* ------------------------------------------------------------------------
+     Saving videos for offline use.
+
+     The service worker serves videos out of the MEDIA cache once they are
+     here, and streams them from the network until then, so this is the only
+     thing standing between the app and working in airplane mode.
+     ------------------------------------------------------------------------ */
+  var VIDEO_CACHE = "ff-media";
+
+  function videoUrls() {
+    var urls = [];
+    LESSONS.forEach(function (id) {
+      var byLang = window.LanguageService.LESSON_VIDEO_MAP[id];
+      for (var lang in byLang) {
+        if (Object.prototype.hasOwnProperty.call(byLang, lang)) urls.push(byLang[lang]);
+      }
+    });
+    return urls;
+  }
+
+  var refreshOfflineLabel = null;
+
+  function setupOfflineVideos() {
+    var btn = document.getElementById("offline-download");
+    var wrap = document.getElementById("offline-progress");
+    var bar = document.getElementById("offline-bar-fill");
+    var status = document.getElementById("offline-status");
+    if (!btn || !("caches" in window)) {
+      if (btn) btn.hidden = true;
+      return;
+    }
+
+    var urls = videoUrls();
+    // How many of those URLs actually exist; known only after a run.
+    var available = urls.length;
+
+    function label(saved) {
+      var t = pack().quizText;
+      var complete = saved > 0 && saved >= available;
+      btn.textContent = complete ? t.videosSaved : t.saveVideos;
+      btn.disabled = complete;
+    }
+
+    async function savedCount() {
+      try {
+        var cache = await caches.open(VIDEO_CACHE);
+        var keys = await cache.keys();
+        return keys.length;
+      } catch (e) {
+        return 0;
+      }
+    }
+
+    refreshOfflineLabel = function () {
+      savedCount().then(function (n) {
+        // A previous session already proved how many exist.
+        if (n > 0 && n < available) available = n;
+        label(n);
+      });
+    };
+    refreshOfflineLabel();
+
+    btn.addEventListener("click", async function () {
+      var t = pack().quizText;
+      btn.disabled = true;
+      wrap.hidden = false;
+      bar.style.width = "0%";
+
+      var cache = await caches.open(VIDEO_CACHE);
+      var done = 0;
+      var missing = 0;
+      var failed = 0;
+
+      for (var i = 0; i < urls.length; i++) {
+        status.textContent = interpolate(t.savingVideos, { a: i + 1, b: urls.length });
+        try {
+          // Files this large are fetched one at a time on purpose: a phone on
+          // a weak connection handles a single stream far better than twelve.
+          var res = await fetch(urls[i], { cache: "reload" });
+          if (res.ok) {
+            await cache.put(urls[i], res);
+            done++;
+          } else if (res.status === 404) {
+            // Not yet produced (a lesson still being filmed). Not a failure:
+            // that lesson shows its "coming soon" card either way.
+            missing++;
+          } else {
+            failed++;
+          }
+        } catch (e) {
+          failed++;
+        }
+        bar.style.width = Math.round(((i + 1) / urls.length) * 100) + "%";
+      }
+
+      // Only files that exist can be saved, so success is measured against
+      // those. Counting toward a video that has not been made yet would nag
+      // forever about a total that is unreachable.
+      available = done + failed;
+      status.textContent = failed
+        ? interpolate(t.videosPartial, { a: done, b: available })
+        : t.videosReady;
+      label(done);
+
+      // Ask Android not to evict this under storage pressure. Usually granted
+      // to an installed app; harmless when it is not.
+      if (navigator.storage && navigator.storage.persist) {
+        navigator.storage.persist().catch(function () {});
+      }
+    });
+  }
+
   function setupCertificateModal() {
     var modal = document.getElementById("certificate-modal");
     if (!modal) return;
@@ -903,6 +1015,10 @@
       }
     );
 
+    // The offline button's label depends on cache state, not just the
+    // language pack, so it is refreshed by its own module.
+    if (typeof refreshOfflineLabel === "function") refreshOfflineLabel();
+
     // Nav labels come from the ordered `nav` array in the language pack.
     var navLabels = pack().nav;
     Array.prototype.forEach.call(
@@ -946,6 +1062,7 @@
     setupTheme();
     setupNav();
     setupSettings();
+    setupOfflineVideos();
     setupNameModal();
     setupCertificateModal();
     setupMusic();

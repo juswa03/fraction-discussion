@@ -1368,6 +1368,51 @@ select {
   margin-top: 2px;
 }
 
+/* The offline row stacks: a download of this size needs room for a progress
+   bar and a status line under the button. */
+.setting-row-stack {
+  flex-direction: column;
+  align-items: stretch;
+  gap: var(--space-3);
+}
+
+.offline-controls {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.offline-progress[hidden] {
+  display: none;
+}
+
+.offline-progress {
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-2);
+}
+
+.offline-bar {
+  height: 8px;
+  border-radius: var(--r-full);
+  background: var(--paper-sunken);
+  border: 1px solid var(--line);
+  overflow: hidden;
+}
+
+.offline-bar > div {
+  height: 100%;
+  width: 0;
+  background: var(--accent);
+  transition: width var(--dur) var(--ease);
+}
+
+#offline-status {
+  font-size: var(--text-xs);
+  color: var(--ink-faint);
+  font-variant-numeric: tabular-nums;
+}
+
 /* --------------------------------------------------------------------------
    Quiz
    -------------------------------------------------------------------------- */

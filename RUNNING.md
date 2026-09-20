@@ -159,6 +159,14 @@ Then tap Chrome's **⋮** menu → **Install app**.
 > phone is only offering a bookmark. Something is wrong — check that you used
 > `localhost` and not an IP address.
 
+### Saving the videos to the phone
+
+Once installed, open **Settings → Videos for offline → Save videos** while the
+phone is still connected. This downloads about 171 MB and takes a few minutes;
+a progress bar shows how far it has got. It only needs doing once.
+
+Skip this and everything still works offline except watching the videos.
+
 ### Checking that offline really works
 
 1. Open the app from its home screen icon and browse around for a few seconds,
@@ -166,8 +174,8 @@ Then tap Chrome's **⋮** menu → **Install app**.
 2. Turn on **airplane mode**.
 3. Force-close the app and reopen it from the icon.
 
-Lessons, all twelve quizzes, saved scores, fonts and images should all work
-normally. Videos are the exception — see below.
+Lessons, videos, all twelve quizzes, saved scores, fonts and images should all
+work normally.
 
 The USB cable is only needed to install and to update. Day to day, the app runs
 entirely from the phone.
@@ -216,13 +224,18 @@ To change the limit, edit `SECONDS_PER_QUESTION` at the top of `js/quiz.js`
 | Fonts, icons, images | Yes |
 | Saved scores and certificate | Yes |
 | Background music | Yes, after playing once |
-| **Lesson videos** | **No** |
+| **Lesson videos** | Yes, **after tapping "Save videos"** |
 
-Videos are deliberately excluded. Video playback jumps around a file as you
-seek through it, and the offline storage system cannot serve those partial
-requests correctly — caching video there breaks seeking and can stop playback
-altogether. Making videos available offline needs a different approach, which
-is worth adding once the real videos exist and their total size is known.
+Everything except the videos is stored automatically on first visit. The
+videos are about 171 MB, which is too much to download without asking, so they
+are opt-in: **Settings → Videos for offline → Save videos**.
+
+The download runs one file at a time with a progress bar, and can be resumed by
+tapping again if it is interrupted. Once finished, the whole app — lessons,
+videos, quizzes, scores and the certificate — works in airplane mode.
+
+Videos are kept in a cache that is deliberately *not* tied to the app version,
+so updating the app does not throw away a 171 MB download.
 
 ---
 

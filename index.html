@@ -280,6 +280,20 @@
             <span class="switch-track" aria-hidden="true"></span>
           </span>
         </div>
+
+        <div class="setting-row setting-row-stack">
+          <div class="setting-row-text">
+            <label id="offline-label" data-i18n="quizText.offlineLabel">Videos for offline</label>
+            <p id="offline-help" data-i18n="quizText.offlineHelp">Save the lesson videos so they play with no internet.</p>
+          </div>
+          <div class="offline-controls">
+            <button id="offline-download" class="btn btn-secondary" type="button">Save videos</button>
+            <div id="offline-progress" class="offline-progress" hidden>
+              <div class="offline-bar"><div id="offline-bar-fill"></div></div>
+              <p id="offline-status" role="status" aria-live="polite"></p>
+            </div>
+          </div>
+        </div>
       </div>
     </div>
 

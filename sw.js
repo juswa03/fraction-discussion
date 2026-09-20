@@ -5,11 +5,18 @@
  * CSS/JS/JSON file and do not bump VERSION, browsers keep serving the old copy
  * from cache. Bumping it discards every old cache on the next load.
  */
-const VERSION = "v7";
+const VERSION = "v8";
 
 const SHELL = `ff-shell-${VERSION}`;
 const DATA = `ff-data-${VERSION}`;
-const MEDIA = `ff-media-${VERSION}`;
+
+/* Deliberately NOT versioned. This holds videos the student chose to download
+   (~171 MB); tying it to VERSION would throw that away on every deploy and
+   make them fetch it all again over a phone connection. Its contents are
+   whole files addressed by URL, so a new app version cannot invalidate them.
+   Renaming a video file is the only thing that would, and that is rare. */
+const MEDIA = "ff-media";
+
 const CURRENT = [SHELL, DATA, MEDIA];
 
 const SHELL_ASSETS = [
@@ -104,6 +111,54 @@ async function networkFirst(request) {
   }
 }
 
+/* Range-aware cache lookup. A <video> element asks for byte ranges; the Cache
+   API only stores and matches whole responses, so the slice and its headers
+   are built here. A miss falls through to the network untouched. */
+async function serveVideo(request) {
+  const cache = await caches.open(MEDIA);
+  const cached = await cache.match(request.url, { ignoreSearch: true });
+
+  if (!cached) return fetch(request);
+
+  const range = request.headers.get("range");
+  if (!range) return cached;
+
+  const buffer = await cached.arrayBuffer();
+  const total = buffer.byteLength;
+  const match = /^bytes=(\d*)-(\d*)$/.exec(range.trim());
+
+  if (!match) {
+    return new Response(null, { status: 416, headers: { "Content-Range": "bytes */" + total } });
+  }
+
+  // "bytes=-500" means the LAST 500 bytes, not from 0 to 500. The moov atom
+  // often sits at the end of a file, so players do ask for exactly this.
+  let start;
+  let end;
+  if (match[1] === "") {
+    const suffix = Number(match[2]);
+    start = Math.max(0, total - suffix);
+    end = total - 1;
+  } else {
+    start = Number(match[1]);
+    end = match[2] === "" ? total - 1 : Math.min(Number(match[2]), total - 1);
+  }
+
+  if (!(start >= 0 && start <= end && end < total)) {
+    return new Response(null, { status: 416, headers: { "Content-Range": "bytes */" + total } });
+  }
+
+  return new Response(buffer.slice(start, end + 1), {
+    status: 206,
+    headers: {
+      "Content-Type": cached.headers.get("Content-Type") || "video/mp4",
+      "Content-Length": String(end - start + 1),
+      "Content-Range": "bytes " + start + "-" + end + "/" + total,
+      "Accept-Ranges": "bytes"
+    }
+  });
+}
+
 self.addEventListener("fetch", (event) => {
   const { request } = event;
   if (request.method !== "GET") return;
@@ -111,10 +166,15 @@ self.addEventListener("fetch", (event) => {
   const url = new URL(request.url);
   if (url.origin !== self.location.origin) return;
 
-  // Videos bypass the worker entirely. Cache.match() ignores Range headers, so
-  // answering a byte-range request from cache breaks seeking and can stop
-  // playback outright. The network stack handles ranges correctly on its own.
-  if (request.destination === "video" || request.headers.has("range") || url.pathname.includes("/assets/videos/")) {
+  // Videos: served from the MEDIA cache only once the student has explicitly
+  // saved them for offline use. Otherwise they bypass the worker entirely and
+  // stream from the network.
+  //
+  // Cache.match() ignores Range headers, so a cached video must have its
+  // byte-range requests answered by hand; returning a whole 200 body to a
+  // request that asked for a range breaks seeking and can stop playback.
+  if (request.destination === "video" || url.pathname.includes("/assets/videos/")) {
+    event.respondWith(serveVideo(request));
     return;
   }
 
