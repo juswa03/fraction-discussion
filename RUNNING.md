@@ -9,18 +9,19 @@ For what the app *is* and how it is designed, see [README.md](README.md).
 
 ## Before you start
 
-You need **Python** (any version 3.x). Check by opening a terminal and typing:
+You need **Node.js**, which provides the `npx` command used to serve the
+folder. Check by opening a terminal and typing:
 
 ```bash
-python --version
+node --version
 ```
 
 If that prints a version number, you are ready. If it says the command is not
-found, install Python from <https://www.python.org/downloads/> and tick **"Add
-Python to PATH"** during setup.
+found, install Node from <https://nodejs.org/> (the LTS build).
 
 Nothing else is needed. There is no `npm install`, no build step, and no
-dependencies to download.
+dependencies to download — `npx serve` fetches the server on first use and
+caches it.
 
 Prefer not to install Python, or want the full list of what is and is not
 required? See [REQUIREMENTS.md](REQUIREMENTS.md).
@@ -37,10 +38,16 @@ In File Explorer, open the `fraction_discussion` folder (the one containing
 ### 2. Start the server
 
 ```bash
-python -m http.server 8000
+npx serve -l 8000
 ```
 
 Leave this window open. The app is served for as long as it runs.
+
+> **Use `npx serve`, not `python -m http.server`, now that the videos are in
+> place.** Python's built-in server is single-threaded and stalls partway
+> through large files — videos hang or refuse to play. `npx serve` handles them
+> instantly and supports the range requests video seeking needs. Python is
+> still fine if you are only working on the quizzes.
 
 ### 3. Open the app
 
@@ -83,11 +90,12 @@ Stick to `http://localhost:8000`.
 
 ## Adding the lesson videos
 
-Every lesson currently shows a **"Video coming soon"** card. The lesson text,
-objectives and quiz all work regardless — only the video is missing.
+Eleven of the twelve videos are in place. Only **lesson 4 Tagalog**
+(`lesson4-tl.mp4`) is still missing, and that lesson shows a "Video coming
+soon" card until the file is added. Its quiz works either way.
 
-To add them, copy your `.mp4` files into `assets/videos/` using the exact
-filenames listed in [assets/videos/README.md](assets/videos/README.md):
+Copy new `.mp4` files into `assets/videos/` using the exact filenames listed in
+[assets/videos/README.md](assets/videos/README.md):
 
 ```
 assets/videos/lesson1-en.mp4     lesson1-tl.mp4     lesson1-bi.mp4
@@ -133,7 +141,7 @@ browser does trust.
 With the phone connected, run this from the project folder:
 
 ```bash
-python -m http.server 8000
+npx serve -l 8000
 ```
 
 Then in a second terminal, from the folder where you unzipped Platform-Tools:
@@ -254,7 +262,7 @@ The page was opened by double-clicking `index.html`. Use
 
 **"Address already in use" when starting the server.**
 Port 8000 is taken by another program, possibly an old server left open. Use a
-different port — `python -m http.server 8080` — and open
+different port — `npx serve -l 8080` — and open
 `http://localhost:8080`.
 
 **Changes to a file are not showing up.**

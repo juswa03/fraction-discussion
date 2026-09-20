@@ -1,6 +1,6 @@
 # What you need to install
 
-**Short answer: for running the app on a computer, almost certainly nothing.**
+**Short answer: Node.js, and nothing else.**
 
 This project has no packages, no dependencies and no build step. There is no
 `npm install` to run, no `package.json`, no `requirements.txt`, and no
@@ -14,7 +14,30 @@ have one.
 
 ## For running the app
 
-### Python — the recommended option
+### Node.js — the recommended option
+
+The lesson videos are large (about 180 MB in total), and Python's built-in
+server stalls partway through files that size, so videos hang. `npx serve`,
+which comes with Node, handles them instantly.
+
+Check whether you already have it:
+
+```bash
+node --version
+```
+
+If it prints a version number, **you are done — install nothing**. Otherwise
+grab the LTS build from <https://nodejs.org/>.
+
+Then serve the folder:
+
+```bash
+npx serve -l 8000
+```
+
+The first run downloads `serve` and caches it; after that it works offline.
+
+### Python — fine for quiz work only
 
 Check whether you already have it:
 
@@ -32,19 +55,13 @@ If it says the command is not found:
    without it the `python` command will not work in a terminal
 4. Close and reopen your terminal, then check the version again
 
-Then serve the folder:
+### Other servers
 
-```bash
-python -m http.server 8000
-```
-
-### If you would rather not install Python
-
-Any static file server works. Pick whichever matches what you already have:
+Any static file server works, though large videos may stall on some of them:
 
 | You already have | Command |
 |---|---|
-| Node.js | `npx serve -l 8000` |
+| Python (quizzes only) | `python -m http.server 8000` |
 | PHP | `php -S localhost:8000` |
 | Ruby | `ruby -run -e httpd . -p 8000` |
 | VS Code | Install the **Live Server** extension, right-click `index.html` → *Open with Live Server* |
@@ -110,7 +127,7 @@ Listed because people reasonably expect them:
 
 | | Needed? |
 |---|---|
-| Python (or another file server) | **Yes** — to run the app at all |
+| Node.js (for `npx serve`) | **Yes** — to run the app at all |
 | Android Platform-Tools | Only to install on a phone |
 | USB data cable | Only to install on a phone |
 | Everything else | No |
