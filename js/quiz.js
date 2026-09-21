@@ -4,12 +4,12 @@
    The grading rules are unchanged from the original: questions and choices
    are shuffled per attempt, an answer counts as correct when it matches the
    recorded id OR is mathematically equivalent to the correct choice, and the
-   pass mark is 70%. Only presentation and state handling changed.
+   pass mark is 75%. Only presentation and state handling changed.
    ========================================================================== */
 (function () {
   "use strict";
 
-  var PASS_PERCENT = 70;
+  var PASS_PERCENT = 75;
   var SECONDS_PER_QUESTION = 180;
   var WARN_AT_SECONDS = 30;
   var esc = window.UI.escapeHtml;

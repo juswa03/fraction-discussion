@@ -184,9 +184,10 @@ entirely from the phone.
 
 ## How the quizzes work
 
-**Quizzes open in order.** Quiz 2 stays locked until Quiz 1 is passed with 70%
-or more, and so on. A locked quiz shows a padlock; tapping it explains what to
-finish first and offers to jump straight there, rather than doing nothing.
+**Quizzes open in order.** Quiz 2 stays locked until Quiz 1 is passed with 75%
+or more — 12 of the 15 questions — and so on. A locked quiz shows a padlock;
+tapping it explains what to finish first and offers to jump straight there,
+rather than doing nothing.
 
 To change the pass mark, edit `PASS_PERCENT` in both `js/quiz.js` and
 `js/app.js` — they must agree.
@@ -244,7 +245,7 @@ so updating the app does not throw away a 171 MB download.
 **Bump `VERSION` at the top of `sw.js`.**
 
 ```js
-const VERSION = "v7";   // -> "v8"
+const VERSION = "v9";   // -> "v10"
 ```
 
 Because the app stores copies of its own files for offline use, browsers keep
@@ -291,15 +292,16 @@ Confirm the address is `http://localhost:8000`, not an IP address. Then check
 connection and `adb reverse` must be run again.
 
 **A student is stuck: they cannot reach Quiz 2.**
-They need 70% or more on Quiz 1 first. This is deliberate. To let them past
-for testing, open the browser console (`F12`) and run:
+They need 75% or more on Quiz 1 first — 12 of the 15 questions. This is
+deliberate. To let them past for testing, open the browser console (`F12`) and
+run:
 
 ```js
 localStorage.removeItem("fraction_flow_stats_v1");  // clears all progress
 ```
 
-Or lower `PASS_PERCENT` in `js/quiz.js` and `js/app.js` if 70% is too high for
-your class.
+Or lower `PASS_PERCENT` in `js/quiz.js` and `js/app.js` if 75% is too high for
+your class. The two files must always hold the same value.
 
 **Videos show "coming soon" even though the file is there.**
 Check the filename matches exactly, including the language code

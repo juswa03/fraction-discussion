@@ -5,7 +5,7 @@
   "use strict";
 
   var LESSONS = ["lesson1", "lesson2", "lesson3", "lesson4"];
-  var PASS_PERCENT = 70;
+  var PASS_PERCENT = 75;
   var QUESTIONS_PER_QUIZ = 15;
   var THEME_KEY = "fraction_flow_theme";
 
