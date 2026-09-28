@@ -14,7 +14,12 @@
       const loader = document.getElementById("page-loader");
       setTimeout(() => {
         if (loader) {
-          loader.classList.add("hidden");
+          // css/style.css defines .page-loader.is-hidden (renamed from
+          // .hidden in commit 0405a52, "Gate quizzes in order and time each
+          // question"); this call site was never updated to match, so the
+          // loader added a class the CSS did not look for and stayed on
+          // screen forever.
+          loader.classList.add("is-hidden");
         }
       }, 350);
     });
@@ -340,7 +345,13 @@
   function init() {
     initLoader();
     initReveal();
-    initThemeToggle();
+    // initThemeToggle() intentionally not called: js/app.js's setupTheme()
+    // already owns #theme-toggle (it drives the CSS-based SVG icon swap the
+    // current markup actually uses - see .icon-sun/.icon-moon in
+    // css/style.css). Calling both bound a second click handler to the same
+    // button, so every click toggled the theme twice (net no visible
+    // change) and setTheme()'s `btn.textContent = "🌙"` wiped out the SVG
+    // icons inside the button on top of that.
     initMobileMenu();
     initNavIndicator();
     initSectionProgress();

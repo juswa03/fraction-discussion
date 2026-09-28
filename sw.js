@@ -5,7 +5,7 @@
  * CSS/JS/JSON file and do not bump VERSION, browsers keep serving the old copy
  * from cache. Bumping it discards every old cache on the next load.
  */
-const VERSION = "v9";
+const VERSION = "v11";
 
 const SHELL = `ff-shell-${VERSION}`;
 const DATA = `ff-data-${VERSION}`;
@@ -27,7 +27,6 @@ const SHELL_ASSETS = [
   "css/tokens.css",
   "css/style.css",
   "css/animations.css",
-  "css/responsive.css",
   "css/sound-toggle-switch.css",
   "js/storage.js",
   "js/language.js",
@@ -36,7 +35,8 @@ const SHELL_ASSETS = [
   "js/animations.js",
   "js/app.js",
   "assets/images/background-image.jpg",
-  "assets/images/math-pattern.svg",
+  "assets/images/bg-numbers.jpg",
+  "assets/images/bg-numbers.webp",
   "assets/icons/icon-192.png",
   "assets/icons/icon-512.png",
   "assets/icons/icon-maskable-192.png",

@@ -1,0 +1,187 @@
+/* ==========================================================================
+   Design tokens.
+
+   This file did not exist in git history even though css/style.css has
+   referenced these custom properties since commit 0405a52 ("Gate quizzes in
+   order and time each question", Sept 19) rewrote style.css onto this naming
+   scheme without ever adding the file that defines it. Every colour,
+   spacing, radius and shadow value below is reconstructed to match how
+   style.css, animations.css and sound-toggle-switch.css already use them —
+   nothing here is a new design decision, it is filling in what was missing.
+   ========================================================================== */
+
+:root {
+  /* ---- Paper & ink --------------------------------------------------- */
+  --paper:          #faf7f2;
+  --paper-raised:   #ffffff;
+  --paper-sunken:   #f1ece3;
+  --rule:           #e7e0d3;
+  --rule-strong:    #cfc4ac;
+  --line:           #e7e0d3;
+  --surface-strong: var(--paper-raised);
+
+  --ink:            #1c1a17;
+  --ink-soft:       #55504a;
+  /* Darkened from #857e73, which measured 4.02:1 on --paper-raised and
+     3.76:1 on --paper - both under the 4.5:1 AA minimum for text, before
+     any photo/scrim was involved. This value clears 5.3:1+ on both. */
+  --ink-faint:      #6d665b;
+
+  /* ---- Photograph --------------------------------------------------------
+     assets/images/bg-numbers.jpg's own dominant colour (measured, not
+     guessed), used only as the background-colour fallback while the image
+     itself loads. Not a UI colour. */
+  --photo-bg:       #e2ddda;
+
+  /* ---- Accent ----------------------------------------------------------
+     One accent. Teal, matching the redesign work already done in
+     css/style.css's comments and the lesson/quiz UI built around it. */
+  --accent:         #0f766e;
+  --accent-hover:   #0d5f59;
+  --accent-ink:     #ffffff;
+  --accent-wash:    #e3f3f1;
+
+  /* ---- Semantic colours ------------------------------------------------ */
+  --correct:        #15803d;
+  --correct-wash:   #e5f6ea;
+  --wrong:          #b91c1c;
+  --wrong-wash:     #fbe7e7;
+  --gold:           #b8860b;
+  --gold-ink:       #7a5a06;
+
+  /* ---- Lesson colours (used by lesson cards / badges) ------------------ */
+  --lesson-1:       #d97706;
+  --lesson-1-wash:  #fdf1e0;
+  --lesson-1-ink:   #92400e;
+
+  --lesson-2:       #7c3aed;
+  --lesson-2-wash:  #f1e9fd;
+  --lesson-2-ink:   #5b21b6;
+
+  --lesson-3:       #2563eb;
+  --lesson-3-wash:  #e6edfd;
+  --lesson-3-ink:   #1e3a8a;
+
+  --lesson-4:       #db2777;
+  --lesson-4-wash:  #fce6f0;
+  --lesson-4-ink:   #9d174d;
+
+  /* Fallbacks the lesson-card component itself reads when no lesson-N
+     class is present. */
+  --lesson-colour:  var(--accent);
+  --lesson-wash:    var(--accent-wash);
+  --lesson-ink:     var(--accent-hover);
+
+  /* ---- Typography -------------------------------------------------------
+     Matches css/fonts.css, which already self-hosts these three families. */
+  --font-display:   "Baloo 2", system-ui, sans-serif;
+  --font-body:      "Poppins", system-ui, sans-serif;
+  --font-mono:      "Space Mono", ui-monospace, monospace;
+
+  --text-2xs:       0.75rem;
+  --text-xs:        0.8125rem;
+  --text-sm:        0.9375rem;
+  --text-base:      1rem;
+  --text-lg:        1.125rem;
+  --text-xl:        1.375rem;
+  --text-2xl:       1.75rem;
+  --text-3xl:       2.25rem;
+  --text-4xl:       clamp(2.5rem, 2rem + 2vw, 3.5rem);
+
+  /* ---- Spacing scale ----------------------------------------------------
+     4px base, matches the --space-1..9 range style.css uses throughout. */
+  --space-1:        0.25rem;
+  --space-2:        0.5rem;
+  --space-3:        0.75rem;
+  --space-4:        1rem;
+  --space-5:        1.5rem;
+  --space-6:        2rem;
+  --space-7:        2.5rem;
+  --space-8:        3.5rem;
+  --space-9:        5rem;
+
+  /* ---- Radius ------------------------------------------------------------
+     r-sm/md/lg/full is the scheme style.css uses; radius-md is kept as an
+     alias since one stale rule in css/responsive.css still calls it that. */
+  --r-sm:           10px;
+  --r-md:           16px;
+  --r-lg:           24px;
+  --r-full:         999px;
+  --radius-md:      var(--r-md);
+
+  /* ---- Border ------------------------------------------------------------ */
+  --border-hair:    1px solid var(--rule);
+  --glass-border:   1px solid var(--rule);
+
+  /* ---- Shadow --------------------------------------------------------
+     Tinted with the paper's own warm tone rather than flat black. */
+  --shadow-1:       0 1px 2px rgba(28, 26, 23, 0.06), 0 1px 1px rgba(28, 26, 23, 0.08);
+  --shadow-2:       0 4px 10px rgba(28, 26, 23, 0.08), 0 2px 4px rgba(28, 26, 23, 0.06);
+  --shadow-3:       0 12px 28px rgba(28, 26, 23, 0.12), 0 4px 8px rgba(28, 26, 23, 0.08);
+  --shadow:         var(--shadow-2);
+
+  /* ---- Layout ------------------------------------------------------------ */
+  --nav-h:          72px;
+  --shell:          1120px;
+  --measure:        65ch;
+
+  /* ---- Motion ------------------------------------------------------------ */
+  --ease:           cubic-bezier(0.4, 0, 0.2, 1);
+  --dur-fast:       120ms;
+  --dur:            220ms;
+  --dur-slow:       360ms;
+
+  /* ---- Z-index scale ------------------------------------------------------ */
+  --z-nav:          100;
+  --z-raised:       10;
+  --z-modal:        1000;
+  --z-toast:        1100;
+}
+
+/* ==========================================================================
+   Dark theme overrides.
+   ========================================================================== */
+[data-theme="dark"] {
+  --paper:          #16140f;
+  --paper-raised:   #1f1c16;
+  --paper-sunken:   #100e0a;
+  --rule:           #33301f;
+  --rule-strong:    #4c4626;
+  --line:           #33301f;
+
+  --ink:            #f3efe6;
+  --ink-soft:       #c9c2b1;
+  --ink-faint:      #948c78;
+
+  --accent:         #2dd4bf;
+  --accent-hover:   #5eead4;
+  --accent-ink:     #0b1f1c;
+  --accent-wash:    #10302c;
+
+  --correct:        #4ade80;
+  --correct-wash:   #12291a;
+  --wrong:          #f87171;
+  --wrong-wash:     #2e1414;
+  --gold:           #facc15;
+  --gold-ink:       #a16207;
+
+  --lesson-1:       #fbbf24;
+  --lesson-1-wash:  #2b210a;
+  --lesson-1-ink:   #fde68a;
+
+  --lesson-2:       #a78bfa;
+  --lesson-2-wash:  #221a33;
+  --lesson-2-ink:   #ddd6fe;
+
+  --lesson-3:       #60a5fa;
+  --lesson-3-wash:  #14213a;
+  --lesson-3-ink:   #bfdbfe;
+
+  --lesson-4:       #f472b6;
+  --lesson-4-wash:  #331624;
+  --lesson-4-ink:   #fbcfe8;
+
+  --shadow-1:       0 1px 2px rgba(0, 0, 0, 0.4), 0 1px 1px rgba(0, 0, 0, 0.3);
+  --shadow-2:       0 4px 10px rgba(0, 0, 0, 0.45), 0 2px 4px rgba(0, 0, 0, 0.35);
+  --shadow-3:       0 12px 28px rgba(0, 0, 0, 0.55), 0 4px 8px rgba(0, 0, 0, 0.4);
+}

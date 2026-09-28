@@ -32,47 +32,43 @@ body {
 }
 
 /* --------------------------------------------------------------------------
-   The page ground: squared exercise paper, with a maths pattern on top.
+   The page ground: a full-page photograph, fixed behind everything.
 
-   Two layers, both fixed so they do not scroll with the content:
+   Two layers:
 
-     body::before   the squared grid of an exercise book, drawn in CSS at two
-                    scales (a 4mm minor grid inside a 20mm major one).
-     body::after    assets/images/math-pattern.svg, a seamless 240px tile of
-                    the arithmetic these students are actually learning:
-                    + - x /, fraction bars, a half-shaded circle, a bar model,
-                    a number line, tally marks.
+     body::before   assets/images/bg-numbers.jpg/.webp, covering the
+                     viewport. Coloured plastic number magnets scattered on
+                     an off-white table (photo: Tara Winstead / Pexels).
+                     Measured average pixel #e2ddda - a light warm-grey
+                     already close to --paper's own tone - so in light mode
+                     this mostly wants settling, not covering.
+     body::after     a scrim over it. All real content sits inside fully
+                     opaque cards (--paper-raised / --paper-sunken), so this
+                     scrim's only job is to keep the photo calm where it
+                     shows through the gaps between cards and behind the
+                     translucent nav - it never has to make the photo safe
+                     for text by itself (that is what the .hero-text /
+                     .section-head / .about-item / .site-footer backing
+                     plates below are for, since those sit directly on it).
 
-   The pattern is a drawn SVG rather than a stock photograph. At ~6 KB (1.6 KB
-   gzipped) it costs essentially nothing in an app that is precached in full
-   for offline use, it carries no licence or attribution obligation, and
-   because its strokes use `currentColor` it picks up the page's own ink
-   colour and therefore works in both themes from one file.
-
-   Both layers are kept very faint. This is the floor the content stands on;
-   anything strong enough to compete with a quiz question would be a bug.
+   Light and dark use very different scrim strengths, not just an inverted
+   copy of each other. The photo's average pixel is LIGHT, so blending it
+   with dark paper at a moderate opacity just averages light with dark and
+   lands on flat mid-grey - simulated the blend at several opacities before
+   picking these: light mode needs barely any dimming, dark mode needs the
+   dark paper mixed in at ~90% to actually read as a dark theme rather than
+   washed-out grey.
    -------------------------------------------------------------------------- */
 body::before {
   content: "";
   position: fixed;
   inset: 0;
   z-index: -2;
-  background-color: var(--paper);
-  background-image:
-    linear-gradient(var(--rule) 1px, transparent 1px),
-    linear-gradient(90deg, var(--rule) 1px, transparent 1px),
-    linear-gradient(var(--rule) 1px, transparent 1px),
-    linear-gradient(90deg, var(--rule) 1px, transparent 1px);
-  background-size:
-    100px 100px,
-    100px 100px,
-    20px 20px,
-    20px 20px;
-  opacity: 0.5;
-}
-
-[data-theme="dark"] body::before {
-  opacity: 0.38;
+  background-color: var(--photo-bg);
+  background-image: url("../assets/images/bg-numbers.webp");
+  background-size: cover;
+  background-position: center 30%;
+  background-repeat: no-repeat;
 }
 
 body::after {
@@ -81,37 +77,18 @@ body::after {
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  color: var(--ink);
-  background-image: url("../assets/images/math-pattern.svg");
-  background-size: 240px 240px;
-  background-repeat: repeat;
-  opacity: 0.055;
+  background: color-mix(in srgb, var(--paper) 34%, transparent);
 }
 
 [data-theme="dark"] body::after {
-  /* Raised, not lowered. The instinct is that light marks on a dark ground
-     shout, but the dark paper here (#15130f) is close enough to black that
-     there is very little contrast headroom, and at the light theme's 0.055
-     the pattern disappeared completely. Measured against the actual
-     surfaces, this lands at roughly the same visual weight. */
-  opacity: 0.1;
+  background: color-mix(in srgb, var(--paper) 90%, transparent);
 }
 
 @media (max-width: 760px) {
-  /* Smaller tile on a phone: at 240px only two or three symbols land on
-     screen at once, which reads as random marks instead of a pattern. */
-  body::after {
-    background-size: 168px 168px;
-    opacity: 0.05;
-  }
-}
-
-
-@media (max-width: 760px) {
-  /* On a phone the artwork would sit behind the content column rather than
-     beside it. */
-  body::after {
-    display: none;
+  /* Keeps the same crop rather than stretching to fill a taller, narrower
+     viewport. */
+  body::before {
+    background-position: center 25%;
   }
 }
 
@@ -354,6 +331,27 @@ a {
 
 .menu-toggle {
   display: none;
+  place-items: center;
+  width: 44px;
+  height: 44px;
+  padding: 0;
+  margin-left: auto;
+  border-radius: var(--r-sm);
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-soft);
+  cursor: pointer;
+}
+
+.menu-toggle:hover {
+  background: var(--paper-sunken);
+  border-color: var(--rule);
+  color: var(--ink);
+}
+
+.menu-toggle svg {
+  width: 22px;
+  height: 22px;
 }
 
 /* Overall progress, hairline-thin, flush to the bottom edge of the nav.
@@ -372,6 +370,58 @@ a {
   width: 0;
   background: var(--accent);
   transition: width var(--dur-slow) var(--ease);
+}
+
+/* Mobile nav: css/responsive.css was meant to own this (it still has one
+   rule making .menu-toggle visible below 760px), but every other selector
+   in that file targets an older markup structure (.navbar, .nav-links as
+   the dropdown itself, .active-indicator...) that no longer exists, so none
+   of it actually reached the current .site-nav > .nav-menu (.nav-links ul,
+   .nav-tools) structure. Without this, #nav-menu just stayed a plain
+   `display: flex` row that visually collapsed to nothing in a 56px-tall bar
+   at phone width - the hamburger button opened it, but there was no CSS
+   telling it to become a visible dropdown panel. */
+@media (max-width: 760px) {
+  .menu-toggle {
+    display: grid;
+  }
+
+  .nav-menu {
+    position: absolute;
+    top: 100%;
+    left: 0;
+    right: 0;
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    max-height: 0;
+    overflow: hidden;
+    background: var(--paper-raised);
+    border-bottom: var(--border-hair);
+    box-shadow: var(--shadow-2);
+    transition: max-height var(--dur) var(--ease);
+  }
+
+  .nav-menu.is-open {
+    max-height: 70vh;
+    overflow-y: auto;
+  }
+
+  .nav-links {
+    flex-direction: column;
+    align-items: stretch;
+    gap: 0;
+    padding: var(--space-2) var(--space-4);
+  }
+
+  .nav-link {
+    padding: var(--space-3) var(--space-2);
+  }
+
+  .nav-tools {
+    padding: var(--space-3) var(--space-4);
+    border-top: var(--border-hair);
+  }
 }
 
 /* --------------------------------------------------------------------------
@@ -496,8 +546,8 @@ a {
 /* --------------------------------------------------------------------------
    Hero
 
-   Asymmetric: the statement sits left against the page's own paper (no card,
-   because nothing is floating above anything), the progress panel sits right.
+   Asymmetric: the statement sits left, the progress panel (a real card)
+   sits right.
    -------------------------------------------------------------------------- */
 .hero {
   display: grid;
@@ -505,6 +555,32 @@ a {
   gap: var(--space-8);
   align-items: center;
   padding-block: var(--space-9) var(--space-8);
+}
+
+@media (max-width: 960px) {
+  .hero {
+    grid-template-columns: 1fr;
+  }
+}
+
+/* The heading/lede sit directly over the full-page photo with no opaque
+   card behind them, unlike .hero-panel next to them. The photo's darkest
+   measured pixel (a magnet's edge shadow) is near-black, which would drop
+   body-text contrast on dark ink well under the 4.5:1 AA minimum in
+   whichever exact spot it happens to land. A frosted plate - blurred,
+   semi-opaque paper - guarantees contrast everywhere on the photo while
+   still reading as "on the photo" rather than "in a box": the magnet
+   colours show through it, softened. */
+.hero-text {
+  padding: var(--space-6);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+[data-theme="dark"] .hero-text {
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
 }
 
 .hero-eyebrow {
@@ -610,11 +686,26 @@ a {
 }
 
 /* --------------------------------------------------------------------------
-   Section headers — plain type on paper. No card, no kicker on every one.
+   Section headers.
+
+   Same reasoning as .hero-text above: this sits directly on the full-page
+   photo with no opaque card, and --ink-soft body text here is exactly the
+   kind of text that a dark photo pixel can drop under the AA minimum. Same
+   frosted-plate fix, on every section heading rather than just the hero.
    -------------------------------------------------------------------------- */
 .section-head {
+  display: inline-block;
   max-width: var(--measure);
   margin-bottom: var(--space-6);
+  padding: var(--space-5) var(--space-6);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+[data-theme="dark"] .section-head {
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
 }
 
 .section-head h2 {
@@ -1138,9 +1229,21 @@ a {
   gap: var(--space-6);
 }
 
+/* Same contrast risk as .hero-text / .section-head: this card sits on the
+   full-page photo with only a top border, no fill. Filled with the same
+   frosted plate; the top border is kept as the visual divider between
+   items in the row. */
 .about-item {
-  padding-top: var(--space-4);
+  padding: var(--space-4) var(--space-5) var(--space-5);
   border-top: 2px solid var(--ink);
+  border-radius: 0 0 var(--r-md) var(--r-md);
+  background: color-mix(in srgb, var(--paper) 80%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+[data-theme="dark"] .about-item {
+  background: color-mix(in srgb, var(--paper) 82%, transparent);
 }
 
 .about-item h3 {
@@ -1155,11 +1258,27 @@ a {
 
 /* --------------------------------------------------------------------------
    Footer
+
+   Same fix as .hero-text / .section-head / .about-item, but --ink-faint (the
+   lowest-contrast ink token) is used here, so it needs a stronger plate than
+   the standard 72%/82% to keep a safe margin above the 4.5:1 AA minimum.
    -------------------------------------------------------------------------- */
 .site-footer {
   margin-top: var(--space-9);
-  padding-block: var(--space-6);
+  padding: var(--space-6) var(--space-6) var(--space-5);
   border-top: var(--border-hair);
+  /* Measured, not guessed: this photo's darkest pixel is a near-black
+     shadow under a magnet. --ink-faint only clears 4.5:1 against a blend
+     this opaque - calculated directly against that worst-case pixel rather
+     than assumed from the other plates' 72-84% values, which were tuned
+     for a different (brighter-worst-case) photo. */
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
+  backdrop-filter: blur(14px) saturate(1.3);
+  -webkit-backdrop-filter: blur(14px) saturate(1.3);
+}
+
+[data-theme="dark"] .site-footer {
+  background: color-mix(in srgb, var(--paper) 94%, transparent);
 }
 
 .footer-inner {
