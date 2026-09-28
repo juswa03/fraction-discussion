@@ -827,7 +827,13 @@
     LESSONS.forEach(function (id) {
       var byLang = window.LanguageService.LESSON_VIDEO_MAP[id];
       for (var lang in byLang) {
-        if (Object.prototype.hasOwnProperty.call(byLang, lang)) urls.push(byLang[lang]);
+        if (!Object.prototype.hasOwnProperty.call(byLang, lang)) continue;
+        var url = byLang[lang];
+        // YouTube-hosted lessons stream from an <iframe>, which the Cache API
+        // cannot fetch or store - only local .mp4 files can be saved offline.
+        if (url.indexOf("youtube.com") === -1 && url.indexOf("youtu.be") === -1) {
+          urls.push(url);
+        }
       }
     });
     return urls;
@@ -846,6 +852,14 @@
     }
 
     var urls = videoUrls();
+    // Every lesson is YouTube-hosted now, so there is nothing left for this
+    // control to fetch and cache - an iframe stream can't be saved offline.
+    if (urls.length === 0) {
+      var row = btn.closest(".setting-row");
+      if (row) row.hidden = true;
+      else btn.hidden = true;
+      return;
+    }
     // How many of those URLs actually exist; known only after a run.
     var available = urls.length;
 

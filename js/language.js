@@ -21,8 +21,8 @@
           body: "Read and listen in English, Tagalog or Bisaya. Change it any time you like.",
         },
         card3: {
-          title: "Works anywhere",
-          body: "You do not need the internet. Everything works on your phone already.",
+          title: "Bite-sized videos",
+          body: "Each lesson has its own short video, so you only watch what you need.",
         },
       },
       name: {
@@ -40,7 +40,7 @@
       },
       footer: {
         text: "Fraction Fusion. Built for better math sessions.",
-        meta: "Works offline",
+        meta: "Videos need the internet; quizzes work offline",
       },
       nav: ["Home", "Lessons", "Stars", "About"],
       hero: {
@@ -222,8 +222,8 @@
           body: "Magbasa at makinig sa English, Tagalog o Bisaya. Palitan mo kahit kailan.",
         },
         card3: {
-          title: "Gumagana kahit saan",
-          body: "Hindi mo kailangan ng internet. Gumagana na ito sa telepono mo.",
+          title: "Maikling video",
+          body: "May sariling maikling video ang bawat aralin, kaya ang kailangan mo lang ang panoorin.",
         },
       },
       name: {
@@ -241,7 +241,7 @@
       },
       footer: {
         text: "Fraction Fusion. Ginawa para sa mas magandang math session.",
-        meta: "Gumagana offline",
+        meta: "Kailangan ng internet ang video; gumagana offline ang quiz",
       },
       nav: ["Home", "Aralin", "Bituin", "Tungkol"],
       hero: {
@@ -423,8 +423,8 @@
           body: "Pagbasa ug paminaw sa English, Tagalog o Bisaya. Usba bisan kanus-a.",
         },
         card3: {
-          title: "Molihok bisan asa",
-          body: "Dili nimo kinahanglan ang internet. Molihok na kini sa imong telepono.",
+          title: "Mubo nga mga video",
+          body: "Adunay kaugalingong mubo nga video ang matag leksyon, mao nga tan-awon ra nimo ang kinahanglan.",
         },
       },
       name: {
@@ -442,7 +442,7 @@
       },
       footer: {
         text: "Fraction Fusion. Gihimo para sa mas maayong math session.",
-        meta: "Molihok offline",
+        meta: "Kinahanglan ang internet para sa video; molihok offline ang quiz",
       },
       nav: ["Home", "Leksyon", "Bituon", "About"],
       hero: {
@@ -605,28 +605,29 @@
     },
   };
 
-  // Local files so the app works offline. See assets/videos/README.md for the
-  // expected filenames; a missing file falls back to a "coming soon" card.
+  // YouTube (unlisted), so lesson videos don't have to ship as ~180MB of
+  // .mp4 in the repo/deploy. videoMarkup() in app.js detects a youtube.com
+  // URL and renders an <iframe> instead of a <video> tag.
   const LESSON_VIDEO_MAP = {
     lesson1: {
-      en: "assets/videos/lesson1-en.mp4",
-      tl: "assets/videos/lesson1-tl.mp4",
-      bi: "assets/videos/lesson1-bi.mp4",
+      en: "https://www.youtube.com/embed/lEHH2KzmkYU",
+      tl: "https://www.youtube.com/embed/hmFXjk7KVVc",
+      bi: "https://www.youtube.com/embed/8ewqao3u2vs",
     },
     lesson2: {
-      en: "assets/videos/lesson2-en.mp4",
-      tl: "assets/videos/lesson2-tl.mp4",
-      bi: "assets/videos/lesson2-bi.mp4",
+      en: "https://www.youtube.com/embed/Aw2oaGEwLFE",
+      tl: "https://www.youtube.com/embed/EnR69VxA19I",
+      bi: "https://www.youtube.com/embed/JAL-ScLDhgU",
     },
     lesson3: {
-      en: "assets/videos/lesson3-en.mp4",
-      tl: "assets/videos/lesson3-tl.mp4",
-      bi: "assets/videos/lesson3-bi.mp4",
+      en: "https://www.youtube.com/embed/t0gg9woQCIg",
+      tl: "https://www.youtube.com/embed/Hkx6cYSzw-w",
+      bi: "https://www.youtube.com/embed/0zCC0tWgwvw",
     },
     lesson4: {
-      en: "assets/videos/lesson4-en.mp4",
-      tl: "assets/videos/lesson4-tl.mp4",
-      bi: "assets/videos/lesson4-bi.mp4",
+      en: "https://www.youtube.com/embed/ATVIWCf2RD0",
+      tl: "https://www.youtube.com/embed/fqT3tE2AgCw",
+      bi: "https://www.youtube.com/embed/hVsIt__99pg",
     },
   };
 
